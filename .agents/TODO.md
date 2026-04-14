@@ -12,8 +12,8 @@ PLANNING_COMPLETE=false
 - [ ] 0.5 Set PLANNING_COMPLETE=true
 
 ## Phase 1 — Scaffold
-- [ ] 1.1 Create full directory skeleton from 0.4
-- [ ] 1.2 `backend/requirements.txt` with pinned versions
+- [x] 1.1 Create full directory skeleton (Backend skeleton done)
+- [x] 1.2 `backend/requirements.txt` with pinned versions (Done via uv pyproject.toml)
 - [ ] 1.3 `frontend/package.json` — React 18, Vite, TypeScript, Tailwind, React Query, etc.
 - [ ] 1.4 `docker-compose.yml` — backend + frontend dev servers
 - [ ] 1.5 `.env.example` — all env vars, no real values
