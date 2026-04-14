@@ -634,41 +634,39 @@ The user can then tap **"What does 'technically well-positioned' mean?"** and th
 
 ### 🔹 3.7 AI Agent (ReAct Framework)
 
-An intelligent orchestrator that **dynamically decides** which tools and analysis to invoke based on user queries.
+An intelligent orchestrator that **dynamically decides** which tools to invoke.
+The system relies on a **Single Agent + Tools (ReAct) Architecture** using `LangChain` and the `Groq` API (Llama-3-70B).
 
+**Core Rule: Parameterized Deterministic Tools**
+The LLM acts strictly as a "Lead Portfolio Manager". It does not calculate averages, ROE, or technical indicators. All calculations happen in the deterministic `services/` layer, exposed to the agent via `tools/`.
+Tools should be extremely flexible and parameterized (e.g. `get_moving_average(ticker: str, days: int)`) so the LLM decides the parameters dynamically while Python handles the strict math.
+
+#### ⚙️ Execution Flow (The ReAct Loop)
+When an endpoint is triggered, the LangChain `AgentExecutor` begins a Reason + Act loop.
+
+**Example Flow for TATAMOTORS.NS:**
+1. **Thought:** The agent realizes it needs user context first.
+2. **Action:** Calls `fetch_portfolio(user_id="xyz")`.
+3. **Observation:** Returns that the user has a 40% overexposure to the Auto sector.
+4. **Thought:** The agent needs fundamental data to justify the risk.
+5. **Action:** Calls `fetch_quant_scores(ticker="TATAMOTORS.NS")`.
+6. **Observation:** Returns PE: 12, RSI: 28.
+7. **Thought:** Agent checks the knowledge base for sector-specific macro limits.
+8. **Action:** Calls `search_knowledge_base(query="Auto sector limits India")`.
+9. **Observation:** Rule: "Never exceed 35% sector allocation."
+10. **Final Verdict:** Agent breaks loop and structures output.
+
+#### 📜 Agent Output Schema
+The Agent strictly returns a Pydantic model:
+```json
+{
+  "ticker": "TATAMOTORS.NS",
+  "action": "HOLD / ACCUMULATE ON DIPS",
+  "conviction_score": 55,
+  "recommended_allocation_limit_percent": 1.0,
+  "investment_thesis": "Tata Motors is undervalued (PE 12) and oversold (RSI 28). However, due to your 40% exposure to Auto, limit new capital to a 1% SIP allocation."
+}
 ```
-                        ┌──────────────┐
-                        │  User Query  │
-                        └──────┬───────┘
-                               │
-                        ┌──────▼───────┐
-                        │  🤖 ReAct    │
-                        │    Agent     │
-                        └──┬──┬──┬──┬──┘
-                           │  │  │  │
-            ┌──────────────┘  │  │  └──────────────┐
-            │        ┌───────┘  └───────┐          │
-     ┌──────▼──────┐ ┌──────▼──┐ ┌──────▼──┐ ┌────▼───────┐
-     │📊 Market    │ │💼 Port- │ │📚 RAG   │ │🔍 Stock    │
-     │   Data Tool │ │ folio   │ │ System  │ │  Analysis  │
-     └──────┬──────┘ └────┬────┘ └────┬────┘ └────┬───────┘
-            └──────────────┴──────────┴────────────┘
-                               │
-                        ┌──────▼───────┐
-                        │ 📝 Final     │
-                        │   Response   │
-                        └──────────────┘
-```
-
-**Agent Capabilities:**
-
-| Decision | Trigger |
-|----------|---------|
-| Fetch market data | User asks about current prices, trends |
-| Analyze portfolio | User asks about allocation, diversification |
-| Use RAG | User asks conceptual / educational questions |
-| Run stock analysis | User asks to evaluate a specific stock |
-| Combine tools | Complex queries requiring multiple data sources |
 
 ---
 
@@ -737,7 +735,7 @@ Analyzer    Data Svc    Knowledge
 │                      │                                                  │
 │  ┌───────────────────▼───────────────────┐                              │
 │  │          🤖 ReAct Agent               │                              │
-│  │     (LangChain / Custom Agent)        │                              │
+│  │     (LangChain / Groq Llama-3-70B)    │                              │
 │  └──┬────────┬────────┬────────┬─────────┘                              │
 │     │        │        │        │                                        │
 │  ┌──▼──┐ ┌──▼──┐ ┌──▼──┐ ┌──▼──────┐                                 │
@@ -748,10 +746,10 @@ Analyzer    Data Svc    Knowledge
 └─────┼───────┼───────┼───────┼──────────────────────────────────────────┘
       │       │       │       │
 ┌─────▼───────▼───────▼───────▼──────────────────────────────────────────┐
-│                      DATA LAYER                                        │
+│                      DATA LAYER (Supabase Local Docker)                │
 │  ┌──────────┐  ┌───────────┐  ┌──────────┐  ┌────────────┐           │
-│  │ Supabase │  │  yfinance │  │ FAISS /  │  │  OpenAI /  │           │
-│  │  (PgSQL) │  │  (Market) │  │ ChromaDB │  │  HF / LLM  │           │
+│  │ Supabase │  │  yfinance │  │ Supabase │  │ LLM Engine │           │
+│  │  (PgSQL) │  │  (Market) │  │(pgvector)│  │ (Agnostic) │           │
 │  └──────────┘  └───────────┘  └──────────┘  └────────────┘           │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -803,23 +801,19 @@ Analyzer    Data Svc    Knowledge
 
 | Technology | Purpose |
 |------------|---------|
-| **OpenAI API** | Primary LLM for reasoning and generation (initial) |
-| **Hugging Face / Ollama** | Open-source alternatives (optional, cost optimization) |
+| **Groq API** | Primary LLM engine (Llama-3-70B chosen for fast tool calling) |
 
 ### 📚 RAG System
 
 | Technology | Purpose |
 |------------|---------|
-| **sentence-transformers** | Text embedding generation |
-| **FAISS** | Vector similarity search (lightweight, local) |
-| **ChromaDB** | Alternative vector DB (persistent, metadata-rich) |
+| **Supabase (pgvector)** | Vector database for storing RAG chunks and context |
 
 ### 🧠 Agent Framework
 
 | Technology | Purpose |
 |------------|---------|
-| **LangChain (ReAct)** | Primary agent framework with tool-use capabilities |
-| **Custom Tool-Based Agent** | Alternative lightweight implementation |
+| **LangChain** | Primary agent orchestration (`create_tool_calling_agent` / `AgentExecutor`) |
 
 ### 🔐 Authentication
 

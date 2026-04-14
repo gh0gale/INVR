@@ -14,17 +14,17 @@ PLANNING_COMPLETE=false
 ## Phase 1 — Scaffold
 - [x] 1.1 Create full directory skeleton (Backend skeleton done)
 - [x] 1.2 `backend/requirements.txt` with pinned versions (Done via uv pyproject.toml)
-- [ ] 1.3 `frontend/package.json` — React 18, Vite, TypeScript, Tailwind, React Query, etc.
-- [ ] 1.4 `docker-compose.yml` — backend + frontend dev servers
-- [ ] 1.5 `.env.example` — all env vars, no real values
+- [x] 1.3 `frontend/package.json` — NextJS, TypeScript, Tailwind, React Query, etc. (Done)
+- [x] 1.4 `docker-compose.yml` — backend + frontend dev servers (Done)
+- [x] 1.5 `.env.example` — all env vars, no real values (Done)
 - [ ] 1.6 Verify: backend starts (`uvicorn`), frontend starts (`npm run dev`)
 
 ## Phase 2 — Database Layer
-- [ ] 2.1 Define all Supabase table schemas (`user_profiles`, `user_personas`, `portfolio_models`, `market_data`, `sector_benchmarks`, `macro_context`, etc.)
+- [x] 2.1 Define all Supabase table schemas (`user_profiles`, `user_personas`, `portfolio_models`, `market_data`, `sector_benchmarks`, `ai_investment_theses`, `rag_embeddings`, etc.) (Done)
 - [ ] 2.2 Supabase Auth integration
 - [ ] 2.3 SQLAlchemy async models (for local dev / tests)
-- [ ] 2.4 Run migrations; verify schema
-- [ ] 2.5 Seed script: test user + sample portfolio model + RAG seed data + sample sector benchmarks
+- [ ] 2.4 Run migrations / apply `schema.sql` via Supabase CLI
+- [x] 2.5 Seed script: `db/seed_data.py` created for macro and sector benchmarks (Done)
 
 ## Phase 3 — Market Data ETL Pipeline
 - [ ] 3.1 `backend/etl/market_fetcher.py` — yfinance wrapper
@@ -43,11 +43,12 @@ PLANNING_COMPLETE=false
 - [ ] 4.6 Stock analysis endpoint (Full 6-Lens Analysis: Funda, Tech, Val, Quant, Sent, Macro)
 - [ ] 4.7 Scorecard output (Target 1, Target 2, Stop-loss, Entry zone, "Why for you")
 - [ ] 4.8 Education/RAG endpoint (Explain concepts at Beginner, Intermediate, Confident levels)
-- [ ] 4.9 Embedding generation + vector search (FAISS/ChromaDB)
-- [ ] 4.10 Seed vector DB with financial education content
-- [ ] 4.11 Agent chat endpoint (used strictly for follow-up questions)
-- [ ] 4.12 LangChain ReAct agent + tools wiring
-- [ ] 4.13 LLM client wrapper (OpenAI-first, mockable)
+- [ ] 4.9 Embedding generation + vector search (Supabase pgvector)
+- [ ] 4.10 Seed pgvector with financial education content
+- [ ] 4.11 Agent Lead PM setup (`agent/lead_pm.py` and `agent/prompt.py`)
+- [ ] 4.12 LangChain strict tool wiring (`tools/` wrapping `services/`)
+- [ ] 4.13 LLM client wrapper (Groq API, Llama-3-70B)
+- [ ] 4.14 Thesis Repo (`db/thesis_repo.py`) to save/fetch historical AI decisions
 - [ ] 4.14 Alerts creation endpoint
 - [ ] 4.15 Alerts listing endpoint
 - [ ] 4.16 Background alert checker
