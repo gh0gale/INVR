@@ -5,40 +5,41 @@ PLANNING_COMPLETE=false
 ---
 
 ## Phase 0 — Planning
-- [ ] 0.1 Read PS.md and write `.agents/docs/extracted_requirements.md`
-- [ ] 0.2 Write `.agents/docs/architecture/system_overview.md`
-- [ ] 0.3 Write `.agents/docs/decisions/ADR-001-tech-stack.md`
-- [ ] 0.4 Write `.agents/docs/architecture/directory_structure.md`
-- [ ] 0.5 Set PLANNING_COMPLETE=true
+- [x] 0.1 Read PS.md and write `.agents/docs/extracted_requirements.md` (Done)
+- [x] 0.2 Write `.agents/docs/architecture/system_overview.md` (Done)
+- [x] 0.3 Write `.agents/docs/decisions/ADR-001-tech-stack.md` (Done)
+- [x] 0.4 Write `.agents/docs/architecture/directory_structure.md` (Done)
+- [x] 0.5 Set PLANNING_COMPLETE=true
 
 ## Phase 1 — Scaffold
 - [x] 1.1 Create full directory skeleton (Backend skeleton done)
 - [x] 1.2 `backend/requirements.txt` with pinned versions (Done via uv pyproject.toml)
 - [x] 1.3 `frontend/package.json` — NextJS, TypeScript, Tailwind, React Query, etc. (Done)
 - [x] 1.4 `docker-compose.yml` — backend + frontend dev servers (Done)
-- [x] 1.5 `.env.example` — all env vars, no real values (Done)
-- [ ] 1.6 Verify: backend starts (`uvicorn`), frontend starts (`npm run dev`)
+- [x] 1.5 `.env` setup in both backend and frontend (Done)
+- [x] 1.6 Verify: backend starts (`uvicorn`), frontend starts (`npm run dev`) (Verified via scripts/verify_system.py)
 
 ## Phase 2 — Database Layer
-- [x] 2.1 Define all Supabase table schemas (`user_profiles`, `user_personas`, `portfolio_models`, `market_data`, `sector_benchmarks`, `ai_investment_theses`, `rag_embeddings`, etc.) (Done)
+- [x] 2.1 Define all Supabase table schemas (`user_profiles`, `user_personas`, etc.) (Done)
 - [ ] 2.2 Supabase Auth integration
 - [ ] 2.3 SQLAlchemy async models (for local dev / tests)
-- [ ] 2.4 Run migrations / apply `schema.sql` via Supabase CLI
-- [x] 2.5 Seed script: `db/seed_data.py` created for macro and sector benchmarks (Done)
+- [x] 2.4 Run migrations / apply `schema.sql` via Supabase Dashboard (Done)
+- [x] 2.5 Seed script: `db/seed_data.py` (Completed)
 
 ## Phase 3 — Market Data ETL Pipeline
-- [ ] 3.1 `backend/etl/market_fetcher.py` — yfinance wrapper
-- [ ] 3.2 Compute derived metrics (PE, PEG, ROE, RSI, SMA, MACD, Beta, Volatility)
-- [ ] 3.3 `backend/etl/pipeline.py` — idempotent daily update pipeline
+- [x] 3.1 `backend/etl/market_fetcher.py` — yfinance wrapper (Completed)
+- [x] 3.2 Compute derived metrics (PE, PEG, ROE, RSI, SMA, MACD, Beta, Volatility) (Done)
+- [x] 3.3 `backend/etl/pipeline.py` — idempotent pipeline (Initial run successful)
 - [ ] 3.4 Cron trigger setup (APScheduler / Prefect-ready)
 - [ ] 3.5 Data quality verification after each run
 - [ ] 3.6 ETL tests (mock responses, metric accuracy, idempotency)
 
 ## Phase 4 — Backend API
 - [ ] 4.1 Auth endpoints (register, login via Supabase Auth)
-- [ ] 4.2 User profile ingestion (`GET/PUT /api/v1/users/me/profile`)
-- [ ] 4.3 Persona Endpoint: Risk score mapping + scoring_weight_profile generation
-- [ ] 4.4 Portfolio & Sector alignment logic endpoint
+- [x] 4.2 User profile ingestion (`POST /api/v1/users/profile`) (Completed)
+- [x] 4.3 Persona logic: Risk score mapping + scoring_weight_profile (Completed)
+- [x] 4.4 Portfolio Normalizer: Text-to-Weight logic (Completed)
+- [x] 4.5 Seeding script: `scripts/seed_user.py` (Verified)
 - [ ] 4.5 Advisory endpoint (gap detection vs ideal persona templates)
 - [ ] 4.6 Stock analysis endpoint (Full 6-Lens Analysis: Funda, Tech, Val, Quant, Sent, Macro)
 - [ ] 4.7 Scorecard output (Target 1, Target 2, Stop-loss, Entry zone, "Why for you")

@@ -9,7 +9,9 @@ create extension if not exists "vector" with schema public;
 -- 2. Enums
 create type public.income_bracket as enum ('<5L', '5L-10L', '10L-25L', '>25L');
 create type public.risk_appetite as enum ('conservative', 'moderate', 'aggressive');
-create type public.primary_goal as enum ('wealth_creation', 'retirement', 'child_education', 'short_term_growth');
+create type public.primary_goal as enum ('wealth_creation', 'retirement', 'child_education', 'short_term_growth', 'dividend_income', 'portfolio_diversification');
+create type public.proficiency_level as enum ('beginner', 'intermediate', 'advanced');
+create type public.investment_horizon as enum ('intraday', 'swing', 'positional', 'long_term');
 
 -- 3. Tables
 
@@ -23,6 +25,11 @@ create table public.user_profiles (
   investment_horizon_months integer not null check (investment_horizon_months > 0),
   primary_goal public.primary_goal,
   sector_exposure jsonb default '{}'::jsonb,
+  portfolio_size numeric default 0.0,
+  proficiency_level public.proficiency_level default 'beginner',
+  investment_horizon public.investment_horizon default 'long_term',
+  investment_amount_target numeric default 0.0,
+  existing_holdings jsonb default '[]'::jsonb,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );

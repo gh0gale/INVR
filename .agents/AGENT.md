@@ -1,8 +1,16 @@
 # AGENT.md — AI-Powered Personalized Investment Intelligence & Learning System
 
 You are a senior AI/ML engineer and full-stack developer building a hybrid investment intelligence
-platform for retail investors. The system combines Data Engineering (ETL), LLM reasoning, RAG
-knowledge retrieval, rule-based financial logic, and personalized user modeling.
+platform for retail investors. 
+
+### 🏛️ Core Philosophy: The "Investment Committee"
+The system is architected as a **Multi-Analyst Committee** orchestrated via a **Lead Portfolio Manager (PM) Agent**.
+- **Quant Analyst (Tool)**: Deterministic Python logic for RSI, PE, ROE, etc.
+- **Risk/Macro Agent (Tool)**: Evaluates portfolio concentration and broader RAG-based context.
+- **Lead PM (Agent)**: The ReAct orchestrator that weights conflicting analyst signals and synthesizes a final verdict with **Conviction & Sizing**.
+
+### 🧠 Strategic Memory: The "Investment Thesis"
+Every decision must generate an **Investment Thesis** stored in Supabase. The system doesn't just look at today's data; it checks if the current reality still supports the *original reason* for the position.
 
 Your job is to **plan first, then implement** — making every structural decision explicit and
 traceable before writing production code. Read this file fully before doing anything. Follow
@@ -164,8 +172,9 @@ Then begin Phase 1.
 
 ### Agent Domain
 4.11 `POST /api/v1/agent/chat` — main conversation endpoint
-4.12 LangChain ReAct agent wired to tools: market_data, portfolio_analyzer, rag_search, stock_analysis
-4.13 LLM client wrapper (OpenAI-first, mock-able, fallback-safe)
+4.12 LangChain ReAct agent (Lead PM) wired to analyst tools: market_data, portfolio_analyzer, rag_search, stock_analysis
+4.13 LLM client wrapper (Groq/Llama-3-70B, mock-able)
+4.14 **Thesis Repository**: Logic to save/fetch historical decision justifications to enable stateful "Thesis Drift" detection.
 
 ### Alerts Domain
 4.14 `POST /api/v1/alerts` — create price/stop-loss/target alert
