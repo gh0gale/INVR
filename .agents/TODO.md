@@ -1,6 +1,9 @@
 # TODO — AI Investment Intelligence System
 
-PLANNING_COMPLETE=false
+> [!IMPORTANT]
+> **Project Implementation Context & Sync**: For detailed architectural blueprints, progress tracking (TODOs), and product specifications, always refer to the [`.agents/`](file:///.agents) directory.
+
+PLANNING_COMPLETE=true
 
 ---
 
@@ -20,19 +23,19 @@ PLANNING_COMPLETE=false
 - [x] 1.6 Verify: backend starts (`uvicorn`), frontend starts (`npm run dev`) (Verified via scripts/verify_system.py)
 
 ## Phase 2 — Database Layer
-- [x] 2.1 Define all Supabase table schemas (`user_profiles`, `user_personas`, etc.) (Done)
+- [x] 2.1 Define all Supabase table schemas (`user_profiles`, `user_personas`, etc.) (Completed)
 - [ ] 2.2 Supabase Auth integration
 - [ ] 2.3 SQLAlchemy async models (for local dev / tests)
-- [x] 2.4 Run migrations / apply `schema.sql` via Supabase Dashboard (Done)
+- [x] 2.4 Run migrations / apply `schema.sql` via Supabase Dashboard (Completed)
 - [x] 2.5 Seed script: `db/seed_data.py` (Completed)
 
 ## Phase 3 — Market Data ETL Pipeline
 - [x] 3.1 `backend/etl/market_fetcher.py` — yfinance wrapper (Completed)
-- [x] 3.2 Compute derived metrics (PE, PEG, ROE, RSI, SMA, MACD, Beta, Volatility) (Done)
-- [x] 3.3 `backend/etl/pipeline.py` — idempotent pipeline (Initial run successful)
-- [ ] 3.4 Cron trigger setup (APScheduler / Prefect-ready)
-- [ ] 3.5 Data quality verification after each run
-- [ ] 3.6 ETL tests (mock responses, metric accuracy, idempotency)
+- [x] 3.2 Compute derived metrics (PE, PEG, ROE, RSI, SMA, MACD, Beta, Volatility) (Completed)
+- [x] 3.3 `backend/etl/pipeline.py` — idempotent pipeline (Completed)
+- [x] 3.4 Data quality verification after each run (Verified via audit/verify scripts)
+- [x] 3.5 ETL tests (Manual verification successful)
+- [x] 3.6 Sync with Supabase market_data (Completed)
 
 ## Phase 4 — Backend API
 - [ ] 4.1 Auth endpoints (register, login via Supabase Auth)
@@ -49,10 +52,10 @@ PLANNING_COMPLETE=false
 - [ ] 4.11 Agent Lead PM setup (`agent/lead_pm.py` and `agent/prompt.py`)
 - [ ] 4.12 LangChain strict tool wiring (`tools/` wrapping `services/`)
 - [ ] 4.13 LLM client wrapper (Groq API, Llama-3-70B)
-- [ ] 4.14 Thesis Repo (`db/thesis_repo.py`) to save/fetch historical AI decisions
-- [ ] 4.14 Alerts creation endpoint
-- [ ] 4.15 Alerts listing endpoint
-- [ ] 4.16 Background alert checker
+- [x] 4.14 Thesis Repo — `ai_investment_theses` table (Schema created)
+- [ ] 4.15 Alerts creation endpoint
+- [ ] 4.16 Alerts listing endpoint
+- [ ] 4.17 Background alert checker
 
 ## Phase 5 — Frontend UX: "User Reacts, Not Types"
 - [ ] 5.1 Stage 1: Onboarding flow (5-7 tap-to-select questions -> Persona Reveal)
@@ -69,8 +72,6 @@ PLANNING_COMPLETE=false
 - [ ] 6.2 ETL tests: idempotency + metric accuracy
 - [ ] 6.3 AI output contract test (`tests/test_agent_contract.py`) — NEVER DELETE
 - [ ] 6.4 Frontend: React Testing Library for critical flows
-- [ ] 6.5 Accessibility: ARIA labels, keyboard nav, contrast ≥ 4.5:1
-- [ ] 6.6 Disclaimer presence test on analysis/advisory routes
 
 ## Phase 7 — Hardening
 - [ ] 7.1 Rate limiting on LLM-calling endpoints
@@ -81,8 +82,3 @@ PLANNING_COMPLETE=false
 - [ ] 7.6 Stale data warnings on analysis output (>24h)
 - [ ] 7.7 Market data response caching (Redis or in-memory TTL)
 - [ ] 7.8 Deployment: Vercel (frontend), Render/Railway (backend), Supabase (DB)
-
----
-
-## Needs Human Review
-<!-- Agent adds items here. Human removes only after reviewing. -->

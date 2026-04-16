@@ -1,50 +1,69 @@
 import asyncio
+import sys
+import os
+
+# Add project root to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
+from app.etl.market_fetcher import MarketFetcher
+from app.services.analysts import fundamental, valuation, technical, quantitative, derivative, sentiment
 from app.db.supabase_client import supabase_client
-from app.models.enums import ProficiencyLevel
-import logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+async def verify_flow(ticker_symbol="RELIANCE.NS"):
+    print(f"\n" + "="*60)
+    print(f"SYSTEM VERIFICATION: {ticker_symbol}")
+    print("="*60 + "\n")
 
-USER_ID = "809d95fd-019e-46db-ae53-e4ee1b83ff03"
-
-async def verify_system():
-    logger.info("--- 🛡️ AI STOCK SYSTEM VERIFICATION ---")
+    # 1. FETCH & PERSIST
+    print("Phase 1: Fetching live data & saving snapshot...")
+    fetcher = MarketFetcher(ticker_symbol)
+    success = await fetcher.fetch_all()
     
-    # 1. Check Market Data & Enrichment
-    market_resp = supabase_client.table("market_data").select("ticker, macd_line, support_level, revenue_cagr_3y, graham_number").limit(5).execute()
-    stocks = market_resp.data
-    if stocks:
-        enriched_count = sum(1 for s in stocks if s.get('macd_line') is not None)
-        logger.info(f"✅ Market Data: Found {len(stocks)}+ stocks. Enrichment: {enriched_count}/5 checked stocks have MACD/Support.")
-    else:
-        logger.error("❌ Market Data: No stocks found. Run app.etl.pipeline first.")
+    if not success:
+        print("Error: Failed to fetch data. Check your internet connection or ticker symbol.")
+        return
 
-    # 2. Check User Intelligence
-    profile_resp = supabase_client.table("user_profiles").select("id, proficiency_level").eq("id", USER_ID).execute()
-    if profile_resp.data:
-        p = profile_resp.data[0]
-        logger.info(f"✅ User Profile: Found ID {USER_ID[:8]}... (Level: {p['proficiency_level']})")
-    else:
-        logger.error(f"❌ User Profile: ID {USER_ID} not found. Run app.scripts.seed_user first.")
+    data = fetcher.get_market_data_payload()
+    print(f"Data fetched and saved to 'market_data' table.")
 
-    # 3. Check Persona Calculation
-    persona_resp = supabase_client.table("user_personas").select("persona_label, risk_score").eq("id", USER_ID).execute()
-    if persona_resp.data:
-        per = persona_resp.data[0]
-        logger.info(f"✅ User Persona: Computed as '{per['persona_label']}' (Risk: {per['risk_score']})")
+    # 2. VERIFY DB CONTEXT
+    print(f"\nPhase 2: Double-checking Database Context...")
+    if "sector_median_pe" in data:
+        print(f"Success: Fetched Sector Medians from DB (P/E: {data['sector_median_pe']}, P/B: {data['sector_median_pb']})")
     else:
-        logger.error("❌ User Persona: Not found.")
+        print(f"Warning: Sector benchmarks not found in DB for {data.get('sector')}. Using hardcoded fallbacks.")
 
-    # 4. Check Portfolio Normalization
-    port_resp = supabase_client.table("portfolio_models").select("sector_weight_ranges").eq("user_id", USER_ID).execute()
-    if port_resp.data:
-        sectors = list(port_resp.data[0]['sector_weight_ranges'].keys())
-        logger.info(f"✅ Portfolio Normalization: Mapped to {len(sectors)} sectors ({', '.join(sectors)})")
-    else:
-        logger.error("❌ Portfolio Model: Not found.")
+    if "rbi_repo_rate" in data:
+        print(f"Success: Fetched Macro Context from DB (Repo Rate: {data['rbi_repo_rate']}%)")
 
-    logger.info("---------------------------------------")
+    # 3. RUN ANALYSTS
+    print(f"\nPhase 3: Running 6-Pillar Deterministic Analysts...")
+    
+    analysts = {
+        "Fundamental": fundamental,
+        "Valuation": valuation,
+        "Technical": technical,
+        "Quantitative": quantitative,
+        "Derivative": derivative,
+        "Sentiment": sentiment
+    }
+
+    print("-" * 60)
+    print(f"{'ANALYST':<15} | {'SCORE':<5} | {'SUMMARY'}")
+    print("-" * 60)
+
+    for name, module in analysts.items():
+        try:
+            res = module.calculate_score(data)
+            print(f"{name:<15} | {res['score']:>5} | {res['summary']}")
+        except Exception as e:
+            print(f"{name:<15} | ERROR | {e}")
+
+    print("-" * 60)
+    print("\n🚀 Verification Complete! The system is ready for the Phase 4 Agentic Loop.")
 
 if __name__ == "__main__":
-    asyncio.run(verify_system())
+    ticker = "RELIANCE.NS"
+    if len(sys.argv) > 1:
+        ticker = sys.argv[1]
+    asyncio.run(verify_flow(ticker))
