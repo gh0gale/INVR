@@ -1,4 +1,7 @@
-# AI-Powered Personalized Investment Intelligence & Learning System
+# AI Investment Intelligence System
+
+> [!IMPORTANT]
+> **Project Implementation Context & Sync**: For detailed architectural blueprints, progress tracking (TODOs), and product specifications, always refer to the [`.agents/`](file:///.agents) directory.
 
 An end-to-end, privacy-aware financial advisory platform designed for retail investors. This system combines Data Engineering pipelines, LLM-based reasoning, RAG (Retrieval-Augmented Generation), and rule-based logic to evaluate stocks and provide personalized, educational recommendations.
 
@@ -22,7 +25,7 @@ This project is built using a highly structured, agent-driven development proces
 This repository is governed by an AI Agent Meta-Layer located in the `.agents/` directory.
 
 > **Note for Developers/AI Assistants:**
-> Before making any changes or starting a development session, you **MUST** read `.agents/AGENT.md` and `.agents/TODO.md`. Do not start writing application code without consulting the session state.
+> Before making any changes or starting a development session, you **MUST** read [`.agents/AGENT.md`](file:///c:/CODES/DE/AI%20Stock/.agents/AGENT.md) and [`.agents/TODO.md`](file:///c:/CODES/DE/AI%20Stock/.agents/TODO.md). Do not start writing application code without consulting the session state.
 
 ## Getting Started (Once Scaffolded)
 
