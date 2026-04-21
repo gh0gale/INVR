@@ -1,10 +1,28 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
+import { createClient } from "../../utils/supabase/client";
+import { User } from "@supabase/supabase-js";
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    
+    // Initial fetch
+    supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
+
+    // Listen for auth events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -45,13 +63,24 @@ export default function Navbar() {
             >
               How it Works
             </a>
-            <a
-              href="#"
-              id="nav-cta"
-              className="text-sm font-medium px-5 py-2.5 rounded-md bg-white text-black hover:bg-neutral-200 transition-all duration-200"
-            >
-              Client Login
-            </a>
+            
+            {!user ? (
+               <Link
+                 href="/login"
+                 id="nav-cta"
+                 className="text-sm font-medium px-5 py-2.5 rounded-md bg-white text-black hover:bg-neutral-200 transition-all duration-200"
+               >
+                 Client Login
+               </Link>
+            ) : (
+               <Link
+                 href="/dashboard"
+                 id="nav-cta-dash"
+                 className="text-sm font-medium px-5 py-2.5 rounded-md bg-white text-black hover:bg-neutral-200 transition-all duration-200"
+               >
+                 Dashboard
+               </Link>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -90,9 +119,15 @@ export default function Navbar() {
             <a href="#how-it-works" className="text-sm text-fg-muted hover:text-fg transition-colors py-2" onClick={() => setMobileOpen(false)}>
               How it Works
             </a>
-            <a href="#" className="text-sm font-medium px-5 py-2.5 rounded-md bg-white text-black text-center hover:bg-neutral-200 transition-all duration-200" onClick={() => setMobileOpen(false)}>
-              Login / Start Analyzing
-            </a>
+            {!user ? (
+               <Link href="/login" className="text-sm font-medium px-5 py-2.5 rounded-md bg-white text-black text-center hover:bg-neutral-200 transition-all duration-200" onClick={() => setMobileOpen(false)}>
+                 Login / Start Analyzing
+               </Link>
+            ) : (
+               <Link href="/dashboard" className="text-sm font-medium px-5 py-2.5 rounded-md bg-white text-black text-center hover:bg-neutral-200 transition-all duration-200" onClick={() => setMobileOpen(false)}>
+                 Dashboard
+               </Link>
+            )}
           </div>
         </div>
       </div>
