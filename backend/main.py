@@ -1,16 +1,14 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from app.api.routes import profile
 
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+app = FastAPI(
+    title="Algorithmic Portfolio Analyzer Engine",
+    version="1.0.0"
 )
 
-@app.get("/")
-def read_root():
-    return {"status": "AI Investment Backend is running"}
+
+app.include_router(profile.router, prefix="/api/v1/profiles", tags=["Phase 0: Ingestion"])
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
