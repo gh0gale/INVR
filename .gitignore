@@ -1,0 +1,74 @@
+# --- Backend (Python / FastAPI) ---
+# Environment configuration (secrets)
+**/.env
+
+
+# Local Cache
+**/.local_cache/
+
+# Virtual environments
+backend/.venv/
+backend/venv/
+
+
+
+# Python compiled files / cache
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
+
+# Python distribution / packaging
+backend/build/
+backend/dist/
+backend/eggs/
+backend/.eggs/
+backend/*.egg-info/
+backend/sdist/
+backend/wheels/
+backend/.env
+
+# --- Frontend (Node / React) ---
+# Dependencies
+frontend/node_modules/
+node_modules/
+
+# Frontend builds
+frontend/dist/
+frontend/build/
+frontend/.next/
+frontend/out/
+
+# Logs and cache
+frontend/.npm
+frontend/*.log
+frontend/.eslintcache
+frontend/.cache/
+
+# --- IDEs, Editors & OS ---
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# OS-specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# --- Testing & Coverage ---
+htmlcov/
+.tox/
+.pytest_cache/
+.coverage
+.coverage.*
+.hypothesis/
