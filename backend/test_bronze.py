@@ -1,72 +1,39 @@
 import asyncio
 import json
 import os
-import sys
 from app.services.bronze_service import build_bronze_payload
-
-# Reconfigure stdout to support emojis on Windows terminals
-try:
-    sys.stdout.reconfigure(encoding='utf-8')
-except Exception:
-    pass
+from app.services.silver_service import compute_silver_metrics # <-- NEW IMPORT
 
 async def test_pipeline():
-    ticker = "IDEA"
+    ticker = "ASHOKLEY"
     timeframes = ["intraday", "positional"]
-
     
     print("=" * 60)
-    print(f"🚀 STARTING BRONZE LAYER VERIFICATION FOR: {ticker}")
+    print(f"🚀 STARTING BRONZE & SILVER VERIFICATION FOR: {ticker}")
     print("=" * 60)
     
     for tf in timeframes:
-        print(f"\n[🔄] Triggering Pipeline Router & Fetcher for Timeframe: '{tf.upper()}'")
+        print(f"\n[🔄] Processing Timeframe: '{tf.upper()}'")
         try:
-            # 1. Execute the orchestrator service
+            # Bronze Phase
             payload = await build_bronze_payload(ticker=ticker, timeframe=tf)
+            print(f"  [✅] Bronze Payload built. Price rows: {len(payload.price_history) if payload.price_history is not None else 0}")
             
-            # 2. Print high-level structural verification
-            print(f"  [✅] Payload successfully assembled in memory!")
-            print(f"  [•] Ticker: {payload.ticker}")
-            print(f"  [•] Timeframe: {payload.timeframe}")
-            print(f"  [•] Circuit Status: {payload.circuit_status}")
-            
+            # Silver Phase
             if payload.price_history is not None:
-                print(f"  [•] Price History Shapes: {payload.price_history.shape} (Rows, Columns)")
-                print(f"      Latest Close Price: INR {payload.price_history['Close'].iloc[-1]:.2f}")
-            else:
-                print(f"  [❌] Price History is missing!")
+                print(f"  [⚙️] Computing Silver Metrics...")
+                silver = compute_silver_metrics(payload)
                 
-            print(f"  [•] Fundamentals Extracted: {payload.fundamentals}")
-            
-            if payload.sector_history is not None:
-                print(f"  [•] Sector Index History Shape: {payload.sector_history.shape}")
-            else:
-                print(f"  [•] Sector Index History: None (Skipped per manifest or missing mapping)")
+                print(f"  [✅] Silver Metrics Computed:")
+                print(f"      - Price: INR {silver.current_price:.2f}")
+                print(f"      - RSI (14): {silver.rsi_14:.2f}" if silver.rsi_14 else "      - RSI (14): None")
+                print(f"      - SMA 50: {silver.sma_50:.2f}" if silver.sma_50 else "      - SMA 50: None (Insufficient Data)")
+                print(f"      - SMA 200: {silver.sma_200:.2f}" if silver.sma_200 else "      - SMA 200: None (Insufficient Data)")
+                print(f"      - ATR (14): {silver.atr_14:.2f}" if silver.atr_14 else "      - ATR (14): None")
+                print(f"      - Sector RS Delta: {silver.stock_vs_sector_rs:.4f}" if silver.stock_vs_sector_rs else "      - Sector RS Delta: None")
                 
         except Exception as e:
-            print(f"  [💥] Error executing {tf}: {str(e)}")
-            
-    # 3. Verify physical file creation on disk
-    print("\n" + "=" * 60)
-    print("📁 INSPECTING LOCAL JSON CACHE STORAGE")
-    print("=" * 60)
-    cache_dir = os.path.join(os.getcwd(), ".local_cache")
-    if os.path.exists(cache_dir):
-        files = os.listdir(cache_dir)
-        print(f"Found {len(files)} file(s) in .local_cache/:")
-        for f in files:
-            size_kb = os.path.getsize(os.path.join(cache_dir, f)) / 1024
-            print(f"  - {f} ({size_kb:.2f} KB)")
-    else:
-        print("  [❌] .local_cache directory does not exist on disk!")
+            print(f"  [💥] Error: {str(e)}")
 
 if __name__ == "__main__":
-    import time
-    start_time = time.time()
-    # Run the async test suite
     asyncio.run(test_pipeline())
-    end_time = time.time()
-    print("\n" + "=" * 60)
-    print(f"⏱️ TOTAL TIME ELAPSED: {end_time - start_time:.2f} seconds")
-    print("=" * 60)
