@@ -1,16 +1,15 @@
 # --- Backend (Python / FastAPI) ---
 # Environment configuration (secrets)
-backend/.env
-backend/*.env
-backend/.env.local
-backend/.env.development
-backend/.env.production
-backend/.env.staging
+**/.env
+
+
+# Local Cache
+**/.local_cache/
 
 # Virtual environments
 backend/.venv/
 backend/venv/
-backend/.env/
+
 
 
 # Python compiled files / cache
