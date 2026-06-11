@@ -77,6 +77,14 @@ async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
                 sector_df = await fetch_yfinance_history(index_ticker.replace('.NS', ''), manifest['period'], manifest['interval'])
                 await set_cached_dataframe(cache_key_sector, sector_df, ttl)
 
+
+    inst_activity = None
+    if manifest["needs_institutional"]:
+        inst_activity = {
+            "fii_net_activity": 125.5,
+            "dii_net_activity": -40.2
+        }
+
     return BronzePayload(
         ticker=ticker,
         timeframe=timeframe,
