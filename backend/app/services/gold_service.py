@@ -143,28 +143,71 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         verdict = "AVOID"
         reason = "Execution blocked. Stock is locked in a circuit limit."
     elif failed_count >= 2:
-        verdict = "WAIT"
+        verdict = "CAUTION"  
         reason = f"Failed {failed_count} critical structural gates."
     elif failed_count == 1:
-        verdict = "CAUTION"
+        verdict = "MONITOR"  
         reason = "A primary technical or fundamental gate is failing."
     elif passed_count == total_active and total_active > 0:
-        verdict = "BUY_SETUP"
+        verdict = "STRONG BUY"  
         reason = "All technical and fundamental gates cleared successfully."
         watch_list.append("Ready for entry within the calculated ATR zone.")
     else:
-        verdict = "MONITOR"
+        verdict = "BUY ON DIP"  
         reason = "Mixed signals with no hard failures."
+
+    # --- STEP 2: INSTITUTIONAL VOLUME CONFIRMATION OVERRIDE ---
+    # Retail moves price, institutions move volume. 
+    # Validating breakouts require at least 1.5x the 20-period average volume.
+    if verdict == "STRONG BUY" and silver.current_volume and silver.volume_avg_20:
+        volume_ratio = silver.current_volume / silver.volume_avg_20
+        if volume_ratio < 1.5:
+            verdict = "MONITOR"
+            reason = f"Price cleared breakout gates, but lacks institutional volume confirmation (Ratio: {volume_ratio:.2f} vs 1.5x required)."
+            watch_list.append("Wait for an expansion bar with heavy volume to confirm institutional accumulation.")
+
+    # --- STEP 3: DYNAMIC "BUY ZONE" (DIP SUPPORT) FILTER ---
+    # A true dip is a pullback to structural support, not a freefall in mid-air.
+    if verdict == "BUY ON DIP":
+        price = silver.current_price
+        sma_50 = silver.sma_50
+        sma_200 = silver.sma_200
+        
+        is_near_support = False
+        allowed_buffer = 0.03  # 3% tolerance window around moving averages
+        
+        # Check proximity to 50 SMA
+        if sma_50:
+            if (sma_50 * (1 - allowed_buffer)) <= price <= (sma_50 * (1 + allowed_buffer)):
+                is_near_support = True
+                
+        # Check proximity to 200 SMA
+        if sma_200:
+            if (sma_200 * (1 - allowed_buffer)) <= price <= (sma_200 * (1 + allowed_buffer)):
+                is_near_support = True
+                
+        # If it's not near support, it's a falling knife or drifting asset
+        if not is_near_support:
+            verdict = "CAUTION"
+            reason = "Asset flagged as a 'BUY ON DIP' candidate but is currently floating outside structural support zones (50/200 DMA)."
+            watch_list.append("Wait for price to stabilize and touch a structural moving average floor before allocating risk.")
+
+    # --- STEP 1: TOP DOWN MACRO OVERRIDE (From previous step) ---
+    if silver.market_regime == "bearish" and verdict in ["STRONG BUY", "BUY ON DIP"]:
+        verdict = "CAUTION"
+        reason = "Market regime is strictly BEARISH. Bullish setups are suppressed to protect capital."
+        watch_list.append("Avoid deploying new capital until the broader index reclaims its moving averages.")
 
     # Base Confidence Calculation
     confidence_score = 50.0 + ((passed_count / total_active) * 45.0) if total_active > 0 else 50.0
 
     # =========================================================
-    # TRADE SETUP (Arithmetic generation - Only if BUY_SETUP)
+    # TRADE SETUP (Arithmetic generation - Only if STRONG BUY)
     # =========================================================
     
     trade_setup = None
-    if verdict == "BUY_SETUP" and tf in ["intraday", "swing", "positional"] and silver.atr_14:
+    # BUG FIX: Updated to check for "STRONG BUY" instead of the old "BUY_SETUP"
+    if verdict == "STRONG BUY" and tf in ["intraday", "swing", "positional"] and silver.atr_14:
         p = silver.current_price
         atr = silver.atr_14
         

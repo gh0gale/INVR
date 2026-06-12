@@ -1,3 +1,6 @@
+import os
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 from app.schemas.state import AnalysisState
 from app.services.bronze_service import build_bronze_payload
@@ -40,30 +43,84 @@ def quant_engine_node(state: AnalysisState) -> AnalysisState:
 def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
     if state.get("errors"): return state
     
-    print(f"  [Node] Passing Gold payload to LLM Synthesizer...")
+    print(f"  [Node] Passing Gold payload to LOCAL Llama-3.1 Synthesizer...")
     gold = state['gold']
     user = state['user_profile']
     
-    # ---------------------------------------------------------
-    # TODO: In the next step, we will replace this mock with 
-    # ChatOpenAI.with_structured_output(AnalysisOutput)
-    # ---------------------------------------------------------
-    
-    # For now, we mock the LLM understanding the Gold data and writing a report
-    mock_llm_response = {
-        "verdict": gold.verdict,
-        "confidence_score": gold.confidence_score,
-        "personalized_reasoning": [
-            f"As a {user['experience_level']} investor focused on {user['goal']}, this stock triggered a {gold.verdict}.",
-            f"The quantitative engine flagged the following primary reason: {gold.primary_reason}",
-            f"We are strictly adhering to your {user['risk_tolerance']} risk profile."
-        ],
-        "what_to_watch": gold.what_to_watch,
-        "risk_warning": "All equities carry market risk; position sizing must be respected.",
-        "tutor_triggers": ["Death Cross", "SMA", "RSI", "CAGR"]
-    }
-    
-    return {"llm_output": mock_llm_response}
+    try:
+        # 1. Initialize the Local Model via Ollama
+        # temperature=0 makes it deterministic and less likely to hallucinate
+        llm = ChatOllama(model="llama3.1", temperature=0.0)
+        
+        # 2. Force structured JSON output
+        structured_llm = llm.with_structured_output(AnalysisOutput)
+        
+        # 3. Create the System Prompt with a "Few-Shot" Example
+        # 3. Create the System Prompt with a "Few-Shot" Example
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are a financial analysis synthesizer. You receive pre-computed quantitative 
+            verdicts from a deterministic Python engine and translate them into clear, accurate, 
+            personalized explanations.
+            
+            CRITICAL RULES:
+            - Never contradict the quantitative verdict. The math is ground truth.
+            - Never invent price targets, percentages, or dates not present in the input data.
+            - Never use phrases like 'I think' or 'possibly' about the verdict.
+            - Vocabulary level: {experience_level}
+            - User goal: {goal}
+            - Risk profile: {risk_tolerance}
+            
+            === EXAMPLE INPUT ===
+            Verdict: WAIT | Confidence: 65.0%
+            Reason: Failed 2 critical structural gates.
+            Gate Results: {{'trend': 'PASS', 'death_cross': 'FAIL', 'revenue_growth': 'FAIL'}}
+            What to Watch: ['Confirmed Death Cross. Avoid until 50-day SMA reclaims 200-day SMA.', 'Revenue CAGR is lagging the 10.0% target.']
+            
+            === EXPECTED OUTPUT FORMAT ===
+            Personalized Reasoning: 
+            - "As a beginner focused on long-term compounding, this stock triggered a WAIT."
+            - "The quantitative engine flagged that the asset failed 2 critical structural gates."
+            - "We are strictly adhering to your moderate risk profile by avoiding entry during a fundamental and technical breakdown."
+            What to Watch: 
+            - "Confirmed Death Cross. Avoid until 50-day SMA reclaims 200-day SMA."
+            - "Revenue CAGR is lagging the 10.0% target."
+            Risk Warning: "Attempting to catch a falling asset during a death cross carries severe downside risk."
+            Tutor Triggers: ["Death Cross", "SMA", "CAGR"]
+            """),
+            
+            ("human", """Stock: {ticker}
+            Verdict: {verdict} | Confidence: {confidence_score}%
+            Reason: {primary_reason}
+            
+            Gate Results:
+            {gate_results}
+            
+            What to Watch:
+            {what_to_watch}
+            
+            Generate the structured analysis JSON based on the example provided.""")
+        ])
+        
+        # 4. Chain them together and execute
+        chain = prompt | structured_llm
+        
+        # We format the lists/dicts to strings so the prompt injects them cleanly
+        response = chain.invoke({
+            "experience_level": user['experience_level'],
+            "goal": user['goal'],
+            "risk_tolerance": user['risk_tolerance'],
+            "ticker": state['ticker'],
+            "verdict": gold.verdict,
+            "confidence_score": gold.confidence_score,
+            "primary_reason": gold.primary_reason,
+            "gate_results": str(gold.gate_results),
+            "what_to_watch": str(gold.what_to_watch)
+        })
+        
+        return {"llm_output": response.model_dump()}
+        
+    except Exception as e:
+        return {"errors": [f"Local LLM Error: {str(e)}"]}
 
 # ==========================================
 # GRAPH COMPILATION

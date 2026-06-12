@@ -2,7 +2,8 @@ from pydantic import BaseModel, Field
 from typing import List, Literal
 
 class AnalysisOutput(BaseModel):
-    verdict: Literal["BUY_SETUP", "CAUTION", "MONITOR", "WAIT", "AVOID"] = Field(
+    # Update this in both VerdictDraft and AnalysisOutput
+    verdict: Literal["STRONG BUY", "BUY ON DIP", "MONITOR", "CAUTION", "AVOID"] = Field(
         ..., description="MUST perfectly match the quantitative verdict."
     )
     confidence_score: float = Field(

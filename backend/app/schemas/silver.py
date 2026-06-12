@@ -8,6 +8,12 @@ class SilverMetrics(BaseModel):
     current_price: float
     current_volume: float
 
+    # --- Macro / Top-Down Filters ---
+    market_regime: Optional[str] = "neutral"  # "bullish", "bearish", "neutral"
+
+    # --- Core Technical Metrics ---
+    sma_20: Optional[float] = None
+
     # --- Core Technical Metrics ---
     sma_20: Optional[float] = None
     sma_50: Optional[float] = None

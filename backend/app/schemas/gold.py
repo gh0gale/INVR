@@ -14,7 +14,7 @@ class TradeSetup(BaseModel):
 class VerdictDraft(BaseModel):
     ticker: str
     timeframe: str
-    verdict: Literal["BUY_SETUP", "CAUTION", "MONITOR", "WAIT", "AVOID"]
+    verdict: Literal["STRONG BUY", "BUY ON DIP", "MONITOR", "CAUTION", "AVOID"]
     confidence_score: float
     gate_results: Dict[str, str]       # e.g., {"trend": "PASS", "rsi": "WARN"}
     what_to_watch: List[str]           # Actionable conditions for the user

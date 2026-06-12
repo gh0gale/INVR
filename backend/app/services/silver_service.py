@@ -63,14 +63,31 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
         tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
         m["atr_14"] = float(tr.ewm(alpha=1/14, adjust=False).mean().iloc[-1])
 
-    # Sector Relative Strength Matrix Evaluation
+
+    # MACRO REGIME & RELATIVE STRENGTH (Top-Down Filter)
+    
     if tf in ["swing", "positional", "long_term"] and bronze.sector_history is not None:
         sdf = bronze.sector_history
-        lookback = 20 if tf == "swing" else (50 if tf == "positional" else 12) # ~20 periods baseline
+        lookback = 20 if tf == "swing" else (50 if tf == "positional" else 12)
+        
+        # 1. Sector/Index Relative Strength
         if len(df) >= lookback and len(sdf) >= lookback:
             stock_ret = (current_price - df['Close'].iloc[-lookback]) / df['Close'].iloc[-lookback]
             sector_ret = (sdf['Close'].iloc[-1] - sdf['Close'].iloc[-lookback]) / sdf['Close'].iloc[-lookback]
             m["stock_vs_sector_rs"] = float(stock_ret - sector_ret)
+            
+        # 2. Market Regime Evaluation (Is the broader index crashing?)
+        if len(sdf) >= 200:
+            index_close = float(sdf['Close'].iloc[-1])
+            index_sma_50 = float(sdf['Close'].rolling(50).mean().iloc[-1])
+            index_sma_200 = float(sdf['Close'].rolling(200).mean().iloc[-1])
+            
+            if index_close < index_sma_50 and index_close < index_sma_200:
+                m["market_regime"] = "bearish"
+            elif index_close > index_sma_50 and index_close > index_sma_200:
+                m["market_regime"] = "bullish"
+            else:
+                m["market_regime"] = "neutral"
 
     # =========================================================================
     # 2. HORIZON SPECIFIC FUNDAMENTALS EXTRACTION & ANALYSIS
@@ -79,16 +96,19 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
     inst = bronze.institutional_activity or {}
 
     if tf == "swing":
-        # Valuation & Debt Flags
-        if "pe_ratio" in f:
-            m["pe_vs_sector_avg"] = float(f["pe_ratio"] - f.get("sector_pe_median", 25.0))
-        if "debt_to_equity" in f:
-            m["debt_flag"] = bool(f["debt_to_equity"] > 1.5)
+        # Valuation & Debt Flags (Using robust fallbacks for dict keys)
+        pe = f.get("trailingPE", f.get("pe_ratio", 0.0))
+        if pe > 0:
+            m["pe_vs_sector_avg"] = float(pe - f.get("sector_pe_median", 25.0))
+            
+        # yfinance typically returns Debt/Equity as a percentage (e.g., 150 = 1.5)
+        de = f.get("debtToEquity", f.get("debt_to_equity", 0.0))
+        m["debt_flag"] = bool(de > 150.0 or (0 < de < 10 and de > 1.5))
         
         # Institutional Bias Processing Engine
         fii_net = inst.get("fii_net_activity", 0.0)
         dii_net = inst.get("dii_net_activity", 0.0)
-        if fii_net + dii_net > 50: # Net buying over 50 Cr
+        if fii_net + dii_net > 50: 
             m["institutional_bias"] = "buyer"
         elif fii_net + dii_net < -50:
             m["institutional_bias"] = "seller"
@@ -96,56 +116,42 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
             m["institutional_bias"] = "neutral"
 
     elif tf == "positional":
-        # Multi-Year Aggregations
-        m["revenue_cagr_3y"] = calculate_cagr(f.get("revenue_3y", []))
-        m["profit_cagr_3y"] = calculate_cagr(f.get("net_profit_3y", []))
+        # Fallback Chain: Try 3Y CAGR list -> Fallback to standard YoY Revenue Growth
+        rev_3y = calculate_cagr(f.get("revenue_3y", []))
+        m["revenue_cagr_3y"] = rev_3y if rev_3y is not None else float(f.get("revenueGrowth", 0.0))
         
-        # Operating Margin Trend Analysis
+        profit_3y = calculate_cagr(f.get("net_profit_3y", []))
+        m["profit_cagr_3y"] = profit_3y if profit_3y is not None else float(f.get("earningsGrowth", 0.0))
+        
         opm = f.get("opm_trend", [])
-        if len(opm) >= 2:
-            m["opm_trend"] = "expanding" if opm[-1] > opm[0] else "contracting"
-        else:
-            m["opm_trend"] = "stable"
+        m["opm_trend"] = "expanding" if len(opm) >= 2 and opm[-1] > opm[0] else "stable"
             
-        # Capital Return Metrics
-        m["roe_vs_cost_of_capital"] = bool(f.get("roe", 0) > 15.0)
+        # Capital Return Metrics (Handling both decimal 0.15 and percentage 15.0 formats)
+        roe = f.get("returnOnEquity", f.get("roe", 0.0))
+        m["roe_vs_cost_of_capital"] = bool(roe > 0.15 or roe > 15.0)
         
-        # Cash Flow Verification
-        cfo_list = f.get("cfo_3y", [])
-        profit_list = f.get("net_profit_3y", [])
-        if cfo_list and profit_list and sum(profit_list) > 0:
-            m["cfo_vs_net_profit"] = float(sum(cfo_list) / sum(profit_list))
-            
-        # Corporate Controller Track
-        promoters = f.get("promoter_holding_trend", [])
-        if len(promoters) >= 2:
-            m["promoter_holding_trend"] = "accumulating" if promoters[-1] > promoters[0] else "decreasing"
-        
-        m["valuation_comfort"] = float(f.get("pe", 0.0))
+        m["valuation_comfort"] = float(f.get("trailingPE", f.get("pe", 0.0)))
 
     elif tf == "long_term":
-        # Deep Business Moat Audit Parsing Block
         inc = f.get("income_statement_5y", {})
         bal = f.get("balance_sheet_5y", {})
-        cf = f.get("cashflow_5y", {})
         ratios = f.get("ratios", {})
-        holdings = f.get("holding_pattern_8q", {})
 
-        m["revenue_cagr_5y"] = calculate_cagr(inc.get("revenue", []))
-        m["eps_cagr_5y"] = calculate_cagr(inc.get("eps", []))
+        # Fallback Chain: Try 5Y CAGR list -> Fallback to YoY Growth
+        rev_5y = calculate_cagr(inc.get("revenue", []))
+        m["revenue_cagr_5y"] = rev_5y if rev_5y is not None else float(f.get("revenueGrowth", 0.0))
         
-        # Free Cash Flow Performance Calculation
-        cfo_5y = cf.get("cfo", [])
-        capex_5y = cf.get("capex", [])
-        net_profit_5y = inc.get("net_profit", [])
-        if cfo_5y and capex_5y and net_profit_5y and sum(net_profit_5y) > 0:
-            fcf_total = sum(cfo_5y) - sum(capex_5y)
-            m["fcf_conversion"] = float(fcf_total / sum(net_profit_5y))
+        eps_5y = calculate_cagr(inc.get("eps", []))
+        m["eps_cagr_5y"] = eps_5y if eps_5y is not None else float(f.get("earningsGrowth", 0.0))
             
         # ROE Trend Resilience Analysis
         roe_5y = ratios.get("roe_5y", [])
+        roe_val = f.get("returnOnEquity", 0.0)
+        
         if roe_5y:
             m["roe_consistency_5y"] = "consistent_moat" if min(roe_5y) > 18.0 else "average"
+        elif roe_val > 0.18 or roe_val > 18.0:
+            m["roe_consistency_5y"] = "consistent_moat"
         else:
             m["roe_consistency_5y"] = "volatile"
 
@@ -153,15 +159,9 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
         debt_5y = bal.get("total_debt", [])
         if len(debt_5y) >= 2:
             m["debt_trajectory"] = "deleveraging" if debt_5y[-1] < debt_5y[0] else "leveraging"
+        else:
+            m["debt_trajectory"] = "stable"
             
-        m["book_value_growth"] = calculate_cagr(bal.get("book_value_per_share", []))
-        
-        # Shareholder Base Dynamics
-        p_hold = holdings.get("promoter", [])
-        if p_hold:
-            m["promoter_conviction_trend"] = float(p_hold[-1] - p_hold[0])
-            
-        m["pe_band_vs_growth"] = float(ratios.get("pe", 0.0))
-        m["dividend_consistency"] = bool(ratios.get("dividend_yield", 0.0) > 0.0)
+        m["pe_band_vs_growth"] = float(f.get("trailingPE", ratios.get("pe", 0.0)))
 
     return SilverMetrics(**m)

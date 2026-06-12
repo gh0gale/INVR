@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 import pandas as pd
 
@@ -15,5 +15,4 @@ class BronzePayload(BaseModel):
     fundamentals: Optional[Dict[str, Any]] = Field(None, description="Polymorphic dictionary for financial stats")
     institutional_activity: Optional[Dict[str, Any]] = Field(None, description="FII/DII and bulk deal arrays")
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
