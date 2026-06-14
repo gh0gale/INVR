@@ -42,7 +42,7 @@
 | `sma_200` | — | **Null.** Not enough rows in 5-day 5-min data to compute reliably. |
 | `rsi_14` | `price_history['Close']` | 70-minute momentum tracker. RSI >70 = overbought fade zone; <30 = oversold bounce zone for scalps. |
 | `atr_14` | `High, Low, Close` | Average ₹ move per 5-min candle. Sets tight dynamic stop-loss (e.g. entry − 1.5×ATR) so the risk per trade is quantified. |
-| `volume_avg_20` | `price_history['Volume']` | Baseline 100-min volume. A candle with volume >2× this avg confirms a real breakout vs a fake one. |
+| `volume_avg_20` | `price_history['Volume']` | Baseline 100-min volume. A candle with volume >1.5× this avg confirms a real breakout vs a fake one. |
 | `stock_vs_sector_rs` | — | **Null.** Sector correlation doesn't matter on a 5-min scale. |
 | `sma_gap_pct` | — | **Null.** Death-cross noise filter is irrelevant intraday. |
 
@@ -92,8 +92,9 @@
 | `sma_200` | — | **Null or unreliable.** 126 daily candles technically computable but only ~6 months of history — noisy. |
 | `rsi_14` | `price_history['Close']` | 14-day momentum. RSI 40–60 on entry is ideal — not overextended. Used to time entries during pullbacks. |
 | `atr_14` | `High, Low, Close` | Daily ATR in ₹. Sets the stop-loss distance (2×ATR below entry) and position size for proper risk management. |
-| `volume_avg_20` | `price_history['Volume']` | 20-day average volume. Breakout on 1.5–2× this volume is a genuine move; less = likely to fail. |
-| `stock_vs_sector_rs` | `price_history`, `sector_history` | % return of stock minus % return of sector index over 6 months. A positive delta means the stock is outperforming its sector — a leading indicator for swing continuation. |
+| `volume_avg_20` | `price_history['Volume']` | 20-day average volume. Breakout on 1.5× this volume is a genuine move; less = likely to fail. |
+| `stock_vs_sector_rs` | `price_history`, `sector_history` | % return of stock minus % return of sector index over 20 days (1 month). A positive delta means the stock is outperforming its sector. |
+| `market_regime` | `sector_history` | Evaluates broader market structure (index close vs 50/200 SMA). "bullish", "bearish", or "neutral". Bearish suppresses bullish swing setups. |
 | `sma_gap_pct` | — | **Null.** Death-cross filter is a positional concept. |
 
 ---
@@ -104,7 +105,7 @@
 |---|---|
 | `pe_vs_sector_avg` | Compare stock P/E against sector median. A stock trading at 40% discount to its peers with positive RS = undervalued momentum candidate. |
 | `debt_flag` | Boolean: Debt/Equity > 1.5? If yes, avoid swing trades on bad-news catalysts — high-debt stocks can gap down violently. |
-| `institutional_bias` | FII + DII net activity over last 5 days: net buyer / net seller / neutral. Smart money accumulation during a technical consolidation = strong swing setup. |
+| `institutional_bias` | FII + DII net activity over last 5 days: "buyer" (>50), "seller" (< -50), or "neutral". Smart money accumulation during a technical consolidation = strong swing setup. |
 
 > **Primary edge:** Technical momentum + relative strength + smart money confirmation. Fundamentals here are a filter (avoid debt traps, confirm sector context) — not the thesis driver.
 
@@ -152,7 +153,8 @@
 | `sma_200` | `price_history['Close']` | Macro trend baseline. Price above SMA-200 = bull market structure. Death Cross (50 crossing below 200) = hard rejection signal for new positional entries. |
 | `sma_gap_pct` | `sma_50`, `sma_200` | (SMA50 − SMA200) / SMA200 × 100. If gap < −5%, the death cross is real and deep — avoid. If gap is a small −1%, it may be a false signal in a sideways market. |
 | `rsi_14` | `price_history['Close']` | Entry timing only — don't buy RSI >75 even if fundamentals are great. Used to wait for a pullback to a better price. |
-| `stock_vs_sector_rs` | `price_history`, `sector_history` | 1-year relative strength. A stock consistently outperforming its sector for 12 months has structural business edge — high conviction positional candidate. |
+| `stock_vs_sector_rs` | `price_history`, `sector_history` | 50-day relative strength. A positive delta means the stock is outperforming its sector. |
+| `market_regime` | `sector_history` | Evaluates broader market structure (index close vs 50/200 SMA). "bullish", "bearish", or "neutral". Bearish suppresses bullish setups. |
 | `sma_20` | — | Computed but **low weight.** Micro-trend noise for a multi-month hold. |
 | `atr_14` | — | Computed but **low weight.** Stop-loss on positional trades is based on % drawdown tolerance, not ATR ticks. |
 
@@ -166,8 +168,6 @@
 | `profit_cagr_3y` | `fundamentals['net_profit_3y']` | Net profit CAGR must match or exceed revenue CAGR. If revenue grows 20% but profit grows only 5%, margins are compressing — the business is scaling poorly. |
 | `opm_trend` | `fundamentals['opm_trend']` | Operating profit margin over 4 quarters. Expanding margins = business gaining pricing power. Contracting = input cost pressure or competition — investigate before buying. |
 | `roe_vs_cost_of_capital` | `fundamentals['roe']` | ROE should be >15%. If ROE < 12%, the company earns less than what equity capital costs — value destruction, not creation. |
-| `cfo_vs_net_profit` | `fundamentals['cfo_3y']`, `net_profit_3y` | Cash flow from operations divided by net profit. Should be >0.8. If a company reports high profit but low CFO, earnings may be accounting-inflated. |
-| `promoter_holding_trend` | `fundamentals['promoter_holding_trend']` | Is promoter % rising, stable, or falling quarter-on-quarter? Rising = founders buying more of their own company (strong signal). Steady decline >5% over 4 quarters = investigate pledging/selling. |
 | `valuation_comfort` | `fundamentals['pe']`, `ev_ebitda` | P/E vs 3-year historical P/E band + EV/EBITDA vs sector. Buying a great business at fair value beats buying a mediocre one cheap. A P/E at 5-year highs with slowing growth = mean reversion risk. |
 
 > **Primary edge:** Fundamental business quality sets the universe; technicals (SMA-200 structure, RS, RSI) purely set the entry timing. Don't enter a fundamentally weak stock just because it "looks good on the chart."
@@ -214,7 +214,8 @@
 |---|---|---|
 | `sma_50` (weekly) | `price_history['Close']` | ~1-year trend on weekly chart. Basic sanity check: don't initiate in a confirmed downtrend. |
 | `sma_200` (weekly) | `price_history['Close']` | ~4-year macro trend line. Price above weekly SMA-200 = secular bull market structure. The single most important technical gate for long-term buys. |
-| `stock_vs_sector_rs` | `price_history`, `sector_history` | 5-year RS vs sector AND vs Nifty 500. If a stock can't even beat the index over 5 years, why hold it? Used to compare final candidates. |
+| `stock_vs_sector_rs` | `price_history`, `sector_history` | 12-week relative strength. Used to compare final candidates against recent sector performance. |
+| `market_regime` | `sector_history` | Evaluates broader market structure (index close vs 50/200 SMA). "bullish", "bearish", or "neutral". Bearish suppresses bullish setups. |
 | `sma_20` | — | **Null.** Irrelevant noise for a multi-year hold. |
 | `rsi_14` | — | Computed but **nearly irrelevant.** Trying to time entry by RSI on a 5-year hold costs you more than it saves. |
 | `atr_14` | — | **Null.** Long-term position sizing is based on portfolio % allocation, not ATR. |
@@ -228,13 +229,10 @@
 |---|---|---|
 | `revenue_cagr_5y` | `fundamentals['income_statement_5y']['revenue']` | 5-year revenue CAGR. A true compounder grows revenue >15% CAGR for 5 years through cycles — not just one good year. |
 | `eps_cagr_5y` | `fundamentals['income_statement_5y']['eps']` | EPS growth must outpace revenue growth. If revenue grows 20% but EPS grows 8%, dilution or margin collapse is happening. Long-term wealth comes from EPS compounding. |
-| `fcf_conversion` | `fundamentals['cashflow_5y']['cfo']`, `capex[]` | Free Cash Flow = CFO − Capex, averaged over 5 years. A company that earns ₹100 profit but spends ₹95 on capex every year is a capital-intensive trap. FCF >60% of net profit is healthy. |
-| `roe_consistency_5y` | `fundamentals['ratios']['roe_5y']` | ROE for each of the last 5 years. Consistent ROE >18% across cycles (including a recession year) signals durable competitive advantage. One great year is noise; five great years is a moat. |
-| `debt_trajectory` | `fundamentals['balance_sheet_5y']['total_debt']` | Debt/Equity ratio trend over 5 years. A company actively reducing debt while growing revenue = management capital discipline. Rising debt during stagnant revenue = early stress signal. |
-| `book_value_growth` | `fundamentals['balance_sheet_5y']['book_value_per_share']` | Book value per share CAGR over 5 years. Compounders grow their book value at 15–25% CAGR. Stagnant book value = earnings are not retained/reinvested profitably. |
-| `promoter_conviction_trend` | `fundamentals['holding_pattern_8q']['promoter']` | 8-quarter promoter holding trend. Consistently above 60% with zero pledging over 5 years = management deeply aligned with shareholders. This is the closest proxy to management quality available for free. |
-| `pe_band_vs_growth` | `fundamentals['ratios']['pe']`, `eps_cagr_5y` | Current P/E vs 5-year historical P/E band. If a stock's 5-year average P/E is 20× and current is 35×, you are paying a premium that requires perfect future execution. PEG ratio (P/E ÷ EPS CAGR) <1 = potentially undervalued growth. |
-| `dividend_consistency` | `fundamentals['ratios']['dividend_yield']` | Has the company paid and grown dividends for 5 consecutive years? Not mandatory, but consistent dividend growth from free cash flow is the hardest signal to fake — it proves earnings are real. |
+| `fcf_conversion` | `fundamentals['cashflow_5y']['cfo']`, `capex[]` | Free Cash Flow = CFO − Capex, averaged over 5 years. FCF >60% of net profit is healthy. (Pending implementation in silver layer) |
+| `roe_consistency_5y` | `fundamentals['ratios']['roe_5y']` | ROE > 18%. Returns "consistent_moat" if min 5yr ROE (or current) > 18%, else "volatile" or "average". |
+| `debt_trajectory` | `fundamentals['balance_sheet_5y']['total_debt']` | Debt/Equity ratio trend over 5 years. Returns "deleveraging" (improving) or "leveraging". |
+| `pe_band_vs_growth` | `fundamentals['ratios']['pe']`, `eps_cagr_5y` | Current P/E vs 5-year historical P/E band. Evaluates valuation comfort and growth premium. |
 
 > **Primary edge:** Business quality audit over a full cycle. Technicals only answer: "is now a reasonable time to start buying?" The real question is "will this business be worth 3–5× more in 5 years?" — and that answer lives entirely in the fundamentals.
 
