@@ -37,10 +37,10 @@ def quant_engine_node(state: AnalysisState) -> AnalysisState:
     except Exception as e:
         return {"errors": [f"Quant Engine Error: {str(e)}"]}
 
+
 # ==========================================
 # NODE 3: The LLM Synthesizer (Platinum)
 # ==========================================
-
 def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
     if state.get("errors"): return state
     
@@ -52,64 +52,70 @@ def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
         llm = ChatOllama(model="llama3.1", temperature=0.0)
         structured_llm = llm.with_structured_output(AnalysisOutput)
         
-        # 1. Updated Prompt to enforce numerical accuracy and dynamic reasoning
-        # 1. Updated Prompt to enforce strict bulleted teardown and ban emojis
+        # 1. Hybrid Prompt: Strict Template + Deep Analytical Requirements
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a quantitative financial synthesizer. You receive pre-computed mathematical verdicts and translate them into strict, institutional-grade tear sheets.
-            
+            ("system", """You are an elite quantitative financial synthesizer. You translate mathematical verdicts into deep, institutional-grade tear sheets.
+
             CRITICAL RULES:
-            - Never contradict the quantitative verdict.
-            - Use the exact numeric values from the 'Raw Quantitative Metrics'.
-            - DO NOT invent price targets, percentages, or dates.
-            - STRICTLY NO EMOJIS. Use standard text and dashes for lists.
-            - Vocabulary level: {experience_level}
-            - User goal: {goal}
-            
-            === EXPECTED OUTPUT FORMAT ===
-            
-            Format 'personalized_reasoning' as an array of strings following this exact narrative flow:
-            "Reasons:"
-            "- [Alignment with user timeframe and goal]"
-            "- [Alignment with user risk tolerance ({risk_tolerance})]"
-            "- [Overall macro or sector context]"
-            "The stock [passes/fails] several key quality filters:"
-            "- [Specific Metric 1 from Primary Reason]"
-            "- [Specific Metric 2 from Primary Reason]"
-            "- [Specific Metric 3 from Primary Reason]"
-            
-            Format 'what_to_watch' as an array of strings. Start with the 'Actionable Conditions' provided, then add 1-2 more conditions by extracting current values from the 'Raw Quantitative Metrics' (e.g., monitor specific RSI levels, Volume averages, or SMA gaps).
-            
-            Risk Warning: A 1-sentence strict risk disclaimer.
+            1. NEVER output my template instructions back to me. Provide actual analysis.
+            2. STRICTLY NO EMOJIS. Use standard text and dashes.
+            3. Every claim MUST be backed by exact numbers from the 'Raw Quantitative Metrics' or 'Gate Results'.
+            4. 'tutor_triggers' MUST be an array of 2-4 single financial jargon words ONLY (e.g., ["SMA", "CAGR", "RSI"]). Strictly NO sentences.
+
+            === EXACT OUTPUT FORMAT FOR 'personalized_reasoning' ===
+            Format as an array of strings using this exact structure. Replace the bracketed instructions with deep, analytical sentences:
+
+            "INVESTMENT THESIS & PROFILE ALIGNMENT"
+            "- [Write 2 detailed sentences explaining if the stock's {timeframe} trajectory matches the user goal of {goal}, citing specific growth or trend data from the metrics]."
+            "- [Write 2 detailed sentences analyzing the risk fit for a {risk_tolerance} investor, citing the stock's debt trajectory, market regime, or volatility]."
+
+            "QUANTITATIVE SCORECARD"
+            "- [Metric 1 from data]: [Value] -- [PASS/FAIL/WATCH] -- [Write a detailed sentence explaining the financial implication of this number on the overall business health or price action]."
+            "- [Metric 2 from data]: [Value] -- [PASS/FAIL/WATCH] -- [Write a detailed sentence explaining the financial implication of this number on the overall business health or price action]."
+            "- [Metric 3 from data]: [Value] -- [PASS/FAIL/WATCH] -- [Write a detailed sentence explaining the financial implication of this number on the overall business health or price action]."
+
+            "OVERALL VERDICT RATIONALE"
+            "- [Write a dense, 4-5 sentence analytical paragraph explaining exactly why the {verdict} was reached. Synthesize the strengths and weaknesses, and explain the mathematical weight of the primary failing/passing gates.]"
+
+            === EXACT OUTPUT FORMAT FOR 'what_to_watch' ===
+            Format as an array of strings.
+            - Start with each Actionable Condition provided, formatted as: "[Condition] -- Current: [value]. [Add a detailed sentence explaining why this specific level acts as a critical structural pivot]."
+            - Add 1-2 forward-looking triggers from the data: "[Metric Name]: Watch for [Trigger level] -- Current: [value]. [Add a detailed sentence explaining the risk/reward of this trigger]."
+            - "KEY RISK MONITOR: [Identify the weakest metric]. [Write 1-2 sentences explaining exactly how further deterioration here threatens the capital]."
             """),
             
-            ("human", """Stock: {ticker}
+            ("human", """Ticker: {ticker}
+            Timeframe: {timeframe}
             Verdict: {verdict} | Confidence: {confidence_score}%
             Primary Reason: {primary_reason}
             Gate Results: {gate_results}
             
-            Actionable Conditions:
+            Actionable Conditions from System:
             {what_to_watch}
             
-            Raw Quantitative Metrics:
+            Raw Quantitative Metrics (Silver Layer):
             {silver_metrics}
             
-            Generate the structured analysis JSON.""")
+            User Profile:
+            - Goal: {goal}
+            - Risk Tolerance: {risk_tolerance}
+            
+            Generate the structured analysis JSON following the exact template.""")
         ])
         
         chain = prompt | structured_llm
         
-        # 2. Injecting the exact mathematical payload (silver_metrics)
         response = chain.invoke({
-            "experience_level": user.get('experience_level', 'intermediate'),
-            "goal": user.get('goal', 'growth'),
+            "goal": user.get('goal', 'wealth growth'),
             "risk_tolerance": user.get('risk_tolerance', 'moderate'),
             "ticker": state['ticker'],
+            "timeframe": state['timeframe'],
             "verdict": gold.verdict,
             "confidence_score": gold.confidence_score,
             "primary_reason": gold.primary_reason,
             "gate_results": str(gold.gate_results),
             "what_to_watch": str(gold.what_to_watch),
-            "silver_metrics": state['silver'].model_dump_json(exclude_none=True) # <-- Passes exact math to the LLM
+            "silver_metrics": state['silver'].model_dump_json(exclude_none=True)
         })
         
         return {"llm_output": response.model_dump()}
