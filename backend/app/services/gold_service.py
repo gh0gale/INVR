@@ -132,6 +132,7 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
             else:
                 gates["eps_growth"] = "PASS"
 
+    
     # =========================================================
     # VERDICT RESOLUTION
     # =========================================================
@@ -139,22 +140,43 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
     failed_count = sum(1 for v in gates.values() if v == "FAIL")
     total_active = len(gates)
 
+    # 1. Translate backend keys to readable financial parameters
+    GATE_NAMES = {
+        "circuit": "Circuit Limits",
+        "volume": "Institutional Volume",
+        "micro_trend": "Intraday Trend (100-min)",
+        "rsi": "Momentum (RSI)",
+        "volume_spike": "Intraday Volume Surge",
+        "trend": "Short-Term Trend (20 DMA)",
+        "sector": "Sector Relative Strength",
+        "death_cross": "Moving Average Alignment (50/200 DMA)",
+        "revenue_growth": "Revenue Compounding",
+        "secular_trend": "Long-Term Trend (200 DMA)",
+        "fcf_quality": "Free Cash Flow Conversion",
+        "eps_growth": "EPS Compounding"
+    }
+
+    # 2. Extract exactly what failed/warned and what passed
+    flagged_issues = [GATE_NAMES.get(k, k) for k, v in gates.items() if v in ["FAIL", "WARN"]]
+    strong_metrics = [GATE_NAMES.get(k, k) for k, v in gates.items() if v == "PASS"]
+
+    # 3. Dynamic Parameter-Based Primary Reason
     if "BLOCK" in gates.values():
         verdict = "AVOID"
-        reason = "Execution blocked. Stock is locked in a circuit limit."
+        reason = "Execution blocked due to Circuit Limits."
     elif failed_count >= 2:
         verdict = "CAUTION"  
-        reason = f"Failed {failed_count} critical structural gates."
+        reason = f"Flagged due to weakness in: {', '.join(flagged_issues)}."
     elif failed_count == 1:
         verdict = "MONITOR"  
-        reason = "A primary technical or fundamental gate is failing."
+        reason = f"Held back by lagging {flagged_issues[0]}." if flagged_issues else "A primary technical gate is failing."
     elif passed_count == total_active and total_active > 0:
         verdict = "STRONG BUY"  
-        reason = "All technical and fundamental gates cleared successfully."
+        reason = f"Cleared all gates, showing strong {', '.join(strong_metrics[:3])}."
         watch_list.append("Ready for entry within the calculated ATR zone.")
     else:
         verdict = "BUY ON DIP"  
-        reason = "Mixed signals with no hard failures."
+        reason = "Mixed technical signals, but supported by overall structural floors."
 
     # --- STEP 2: INSTITUTIONAL VOLUME CONFIRMATION OVERRIDE ---
     # Retail moves price, institutions move volume. 

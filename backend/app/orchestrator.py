@@ -40,6 +40,7 @@ def quant_engine_node(state: AnalysisState) -> AnalysisState:
 # ==========================================
 # NODE 3: The LLM Synthesizer (Platinum)
 # ==========================================
+
 def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
     if state.get("errors"): return state
     
@@ -48,73 +49,67 @@ def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
     user = state['user_profile']
     
     try:
-        # 1. Initialize the Local Model via Ollama
-        # temperature=0 makes it deterministic and less likely to hallucinate
         llm = ChatOllama(model="llama3.1", temperature=0.0)
-        
-        # 2. Force structured JSON output
         structured_llm = llm.with_structured_output(AnalysisOutput)
         
-        # 3. Create the System Prompt with a "Few-Shot" Example
-        # 3. Create the System Prompt with a "Few-Shot" Example
+        # 1. Updated Prompt to enforce numerical accuracy and dynamic reasoning
+        # 1. Updated Prompt to enforce strict bulleted teardown and ban emojis
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are a financial analysis synthesizer. You receive pre-computed quantitative 
-            verdicts from a deterministic Python engine and translate them into clear, accurate, 
-            personalized explanations.
+            ("system", """You are a quantitative financial synthesizer. You receive pre-computed mathematical verdicts and translate them into strict, institutional-grade tear sheets.
             
             CRITICAL RULES:
-            - Never contradict the quantitative verdict. The math is ground truth.
-            - Never invent price targets, percentages, or dates not present in the input data.
-            - Never use phrases like 'I think' or 'possibly' about the verdict.
+            - Never contradict the quantitative verdict.
+            - Use the exact numeric values from the 'Raw Quantitative Metrics'.
+            - DO NOT invent price targets, percentages, or dates.
+            - STRICTLY NO EMOJIS. Use standard text and dashes for lists.
             - Vocabulary level: {experience_level}
             - User goal: {goal}
-            - Risk profile: {risk_tolerance}
-            
-            === EXAMPLE INPUT ===
-            Verdict: WAIT | Confidence: 65.0%
-            Reason: Failed 2 critical structural gates.
-            Gate Results: {{'trend': 'PASS', 'death_cross': 'FAIL', 'revenue_growth': 'FAIL'}}
-            What to Watch: ['Confirmed Death Cross. Avoid until 50-day SMA reclaims 200-day SMA.', 'Revenue CAGR is lagging the 10.0% target.']
             
             === EXPECTED OUTPUT FORMAT ===
-            Personalized Reasoning: 
-            - "As a beginner focused on long-term compounding, this stock triggered a WAIT."
-            - "The quantitative engine flagged that the asset failed 2 critical structural gates."
-            - "We are strictly adhering to your moderate risk profile by avoiding entry during a fundamental and technical breakdown."
-            What to Watch: 
-            - "Confirmed Death Cross. Avoid until 50-day SMA reclaims 200-day SMA."
-            - "Revenue CAGR is lagging the 10.0% target."
-            Risk Warning: "Attempting to catch a falling asset during a death cross carries severe downside risk."
-            Tutor Triggers: ["Death Cross", "SMA", "CAGR"]
+            
+            Format 'personalized_reasoning' as an array of strings following this exact narrative flow:
+            "Reasons:"
+            "- [Alignment with user timeframe and goal]"
+            "- [Alignment with user risk tolerance ({risk_tolerance})]"
+            "- [Overall macro or sector context]"
+            "The stock [passes/fails] several key quality filters:"
+            "- [Specific Metric 1 from Primary Reason]"
+            "- [Specific Metric 2 from Primary Reason]"
+            "- [Specific Metric 3 from Primary Reason]"
+            
+            Format 'what_to_watch' as an array of strings. Start with the 'Actionable Conditions' provided, then add 1-2 more conditions by extracting current values from the 'Raw Quantitative Metrics' (e.g., monitor specific RSI levels, Volume averages, or SMA gaps).
+            
+            Risk Warning: A 1-sentence strict risk disclaimer.
             """),
             
             ("human", """Stock: {ticker}
             Verdict: {verdict} | Confidence: {confidence_score}%
-            Reason: {primary_reason}
+            Primary Reason: {primary_reason}
+            Gate Results: {gate_results}
             
-            Gate Results:
-            {gate_results}
-            
-            What to Watch:
+            Actionable Conditions:
             {what_to_watch}
             
-            Generate the structured analysis JSON based on the example provided.""")
+            Raw Quantitative Metrics:
+            {silver_metrics}
+            
+            Generate the structured analysis JSON.""")
         ])
         
-        # 4. Chain them together and execute
         chain = prompt | structured_llm
         
-        # We format the lists/dicts to strings so the prompt injects them cleanly
+        # 2. Injecting the exact mathematical payload (silver_metrics)
         response = chain.invoke({
-            "experience_level": user['experience_level'],
-            "goal": user['goal'],
-            "risk_tolerance": user['risk_tolerance'],
+            "experience_level": user.get('experience_level', 'intermediate'),
+            "goal": user.get('goal', 'growth'),
+            "risk_tolerance": user.get('risk_tolerance', 'moderate'),
             "ticker": state['ticker'],
             "verdict": gold.verdict,
             "confidence_score": gold.confidence_score,
             "primary_reason": gold.primary_reason,
             "gate_results": str(gold.gate_results),
-            "what_to_watch": str(gold.what_to_watch)
+            "what_to_watch": str(gold.what_to_watch),
+            "silver_metrics": state['silver'].model_dump_json(exclude_none=True) # <-- Passes exact math to the LLM
         })
         
         return {"llm_output": response.model_dump()}
