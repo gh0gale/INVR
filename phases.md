@@ -6,7 +6,11 @@
 
 ## Table of Contents
 
-
+1. [Foundational Changes](#foundational-changes)
+2. [Stage 0 — User Profile Ingestion & Validation](#stage-0--user-profile-ingestion--validation)
+3. [Stage 1 — The Router](#stage-1--the-router)
+4. [Stage 2 — Data Fetching Layer (Bronze)](#stage-2--data-fetching-layer-bronze)
+5. [Stage 3 — Silver Layer: Indicator Computation](#stage-3--silver-layer-indicator-computation)
 6. [Stage 4 — Gold Layer: The Hard Gate Evaluator](#stage-4--gold-layer-the-hard-gate-evaluator)
 7. [Stage 5 — The LangGraph State Object](#stage-5--the-langgraph-state-object)
 8. [Stage 6 — The Single LLM Call](#stage-6--the-single-llm-call)
@@ -17,7 +21,203 @@
 
 ---
 
+## Foundational Changes
 
+Before writing a single line of pipeline code, three foundational decisions must be locked in.
+
+### 1. Replace yfinance as the Primary Data Source
+
+yfinance is scraped data with no SLA, no rate limits, and no guaranteed accuracy. One Yahoo Finance HTML change and your pipeline silently serves stale or broken prices. It is acceptable only as a fallback.
+
+**Production data source hierarchy:**
+- **Primary:** Zerodha Kite Connect API — most reliable for Indian retail-facing products, has historical data, live quotes, and fundamentals
+- **Secondary:** NSE/BSE direct feeds for real-time Indian market data
+- **Fallback only:** yfinance, with a freshness validator that rejects any data older than 15 minutes during market hours
+
+### 2. Replace OpenAI with Claude (Anthropic API)
+
+Claude handles nuanced, cautious financial communication better and produces fewer hallucinations on structured output tasks. It also keeps the product off OpenAI's pricing volatility. All LLM calls in this system use `claude-sonnet-4-20250514`.
+
+### 3. The Confidence Score Must Be Computed, Not Generated
+
+An LLM returning `85` in a Pydantic field is theater. There is no Bayesian model, no backtesting, and no calibration behind a number the LLM invents. Showing a fake confidence score to a user making financial decisions is genuinely harmful.
+
+The confidence score must be derived from real signal components: gate pass/fail ratio, RSI distance from extremes, and SMA divergence percentage. The computation is defined in full in [Stage 3](#stage-3--silver-layer-indicator-computation).
+
+---
+
+## Stage 0 — User Profile Ingestion & Validation
+
+Before any data is fetched, the system validates and canonicalizes the user input into a strict internal object. No downstream stage should ever receive a raw, unvalidated profile.
+
+### The UserProfile Object
+
+```python
+UserProfile:
+  experience: Literal["beginner", "intermediate", "advanced"]
+  goal:       Literal["wealth_growth", "dividend_income", "capital_preservation"]
+  timeframe:  Literal["intraday", "swing", "positional", "long_term"]
+  risk:       Literal["conservative", "moderate", "aggressive"]
+  portfolio:  Dict[AssetClass, float]   # must sum to 1.0 ± 0.01
+  capital:    float                     # in INR
+```
+
+### Validation Rules
+
+- Portfolio weights must sum to `1.0 ± 0.01`. If they do not, reject the request with a clear error message — do not silently normalize.
+- If the user's `goal` and `risk` are contradictory (e.g., `goal=capital_preservation` with `risk=aggressive`), surface a **profile contradiction warning** to the user. Do not silently override either value.
+- Persist the profile to the Supabase `user_profiles` table with a version hash. If the user later changes their profile, the hash changes — this allows the system to track how advice shifted over time and is critical for future backtesting.
+
+---
+
+## Stage 1 — The Router
+
+This is a pure Python deterministic router. No LLM is involved. The user's `timeframe` parameter drives the entire downstream pipeline configuration. Every subsequent stage reads from the config object this router produces.
+
+### The Pipeline Config Matrix
+
+```python
+PIPELINE_CONFIG = {
+
+  "intraday": {
+    "data_fetcher":      "fetch_intraday",          # 5-min bars, 1 day
+    "indicators":        ["vwap", "atr", "volume_spike"],
+    "hard_gates":        ["price_vs_vwap", "atr_risk_check", "capital_risk_per_trade"],
+    "fundamental_gates": [],                         # NONE — irrelevant for intraday
+    "llm_vocabulary":    "technical_intraday"
+  },
+
+  "swing": {
+    "data_fetcher":      "fetch_swing",              # daily bars, 6 months
+    "indicators":        ["sma_20", "sma_50", "rsi_14", "macd", "volume_avg"],
+    "hard_gates":        ["trend_check", "rsi_gate", "sector_momentum"],
+    "fundamental_gates": ["basic_pe_check"],         # lightweight only
+    "llm_vocabulary":    "technical_swing"
+  },
+
+  "positional": {
+    "data_fetcher":      "fetch_positional",         # daily bars, 1 year
+    "indicators":        ["sma_50", "sma_200", "rsi_14", "atr", "beta"],
+    "hard_gates":        ["trend_check", "death_cross_check", "portfolio_concentration"],
+    "fundamental_gates": ["pe_check", "debt_equity_light"],
+    "llm_vocabulary":    "technical_positional"
+  },
+
+  "long_term": {
+    "data_fetcher":      "fetch_longterm",           # 3-5 year financials
+    "indicators":        ["pe_ratio", "debt_equity", "roe", "fcf", "dividend_yield", "revenue_cagr"],
+    "hard_gates":        ["debt_gate", "fcf_gate", "roe_gate"],
+    "fundamental_gates": ["full_fundamental_suite"],
+    "llm_vocabulary":    "fundamental_longterm"
+  }
+
+}
+```
+
+### Why the Router Matters
+
+The router prevents unnecessary computation at every stage. An intraday analysis never touches balance sheet data. A long-term analysis never computes VWAP. This is the primary cost-control mechanism — the LLM is only invoked once per analysis, and the Python pipeline only runs the math that is actually relevant to the user's context.
+
+### The Sector Momentum Gap (Critical Addition)
+
+The original design has no sector-level check. A stock can appear technically sound in isolation while its entire sector is in a macro downtrend. For every ticker, the system must also pull the relevant sector index (e.g., Nifty Auto for Ashok Leyland, Nifty IT for TCS) and compute the stock's relative strength against it. This check is added to the `hard_gates` list for `swing` and `positional` timeframes.
+
+---
+
+## Stage 2 — Data Fetching Layer (Bronze)
+
+A single batched async call. All raw data lands here with timestamps and source tags. Nothing is computed yet — this is raw ingestion only.
+
+### The BronzePayload Object
+
+```python
+BronzePayload:
+  ticker:                str
+  fetched_at:            datetime
+  source:                str              # "kite" | "yfinance_fallback"
+  is_stale:              bool             # True if > 15 min old during market hours
+  raw_price_history:     DataFrame
+  raw_fundamentals:      Dict
+  raw_sector_data:       DataFrame        # sector index — pulled in same batch call
+  circuit_breaker_status: str             # "upper" | "lower" | "none"
+```
+
+### Critical Fields Not in the Original Design
+
+**`circuit_breaker_status`** — In Indian markets, stocks hit upper/lower circuits regularly. If a stock is at a lower circuit, it is illiquid and all RSI/SMA signals become meaningless. The system must check this before doing any technical analysis. A product targeting Indian users that ignores circuit breaker status will give dangerous advice during high-volatility sessions.
+
+**`raw_sector_data`** — The sector index is pulled in the same batch call as the stock data. This enables the relative strength computation in Stage 3 without a second API round-trip.
+
+**NSE bulk/block deal data** — Also fetched here for the day. Institutional accumulation or distribution is a signal that most retail-facing tools do not surface. This becomes a product differentiator. If large block deals are appearing on the sell side, that context is material.
+
+### Data Source Fallback Logic
+
+```
+1. Try Kite Connect API
+2. If Kite fails → try yfinance
+3. Validate freshness: if fetched_at > 15 min ago during market hours → set is_stale = True
+4. If is_stale = True → surface warning to user before showing any analysis
+5. Never silently serve stale data
+```
+
+---
+
+## Stage 3 — Silver Layer: Indicator Computation
+
+Pure Python. Uses `pandas-ta` or `ta-lib`. No LLM. Only the indicators listed in the pipeline config for the selected timeframe are computed — nothing extra.
+
+### The Death Cross Fix
+
+The original system flags a Death Cross whenever `sma_50 < sma_200`. This is mathematically correct but practically wrong. When the two SMAs are separated by ₹0.01 (as in the Ashok Leyland example), that is noise — not a tradeable signal. The check must require a meaningful divergence threshold.
+
+```python
+def check_death_cross(sma_50: float, sma_200: float, price: float) -> str:
+    gap_percent = abs(sma_50 - sma_200) / sma_200 * 100
+
+    if sma_50 < sma_200 and gap_percent > 0.5:
+        return "CONFIRMED_DEATH_CROSS"       # hard fail
+    elif sma_50 < sma_200 and gap_percent <= 0.5:
+        return "IMMINENT_DEATH_CROSS"        # warn, do not hard-fail
+    elif sma_50 > sma_200 and gap_percent < 0.5:
+        return "IMMINENT_GOLDEN_CROSS"       # bullish signal, surface to user
+    else:
+        return "HEALTHY_UPTREND"
+```
+
+The 0.5% threshold is stored in `config/gate_thresholds.py` — never hardcoded inline. When backtesting reveals a better threshold, there is one place to change it.
+
+### The Computed Confidence Score
+
+The confidence score is computed here in the Silver layer from real signal components. It is passed through to the LLM output unchanged — the LLM never regenerates it.
+
+```python
+def compute_confidence_score(
+    gates_passed:   int,
+    gates_failed:   int,
+    rsi:            float,
+    sma_gap_pct:    float,
+    volume_vs_avg:  float
+) -> float:
+
+    base = 50.0
+
+    # Gate conviction: proportion of gates passed, max 30 points
+    gate_score = (gates_passed / (gates_passed + gates_failed)) * 30
+
+    # RSI conviction: distance from neutral (50) = stronger signal, max 10 points
+    rsi_conviction = abs(rsi - 50) / 50 * 10
+
+    # SMA gap conviction: larger gap = stronger trend confirmation, capped at 10 points
+    sma_conviction = min(sma_gap_pct * 2, 10)
+
+    final = base + gate_score + rsi_conviction + sma_conviction
+
+    return round(min(final, 95), 1)   # never claim 100% confidence
+```
+
+**Why this matters:** Every component of this score is auditable. You can tell the user exactly why the score is 72 vs 85 — gate breakdown, RSI distance, SMA divergence. An LLM-generated number has no such explanation.
+
+---
 
 ## Stage 4 — Gold Layer: The Hard Gate Evaluator
 
@@ -392,6 +592,22 @@ The *"I don't have a verified definition for this term yet"* fallback is not opt
 
 ---
 
+## What to Cut or Defer
 
+These are features that add real value but should not be in v1.
+
+### Do Not Build Intraday for v1
+
+VWAP and ATR-based intraday signals require sub-minute data refresh rates, a reliable real-time feed, and significantly more complex infrastructure. The operational cost and data reliability requirements are an order of magnitude higher than positional/swing analysis. Ship positional and swing first, do them well, validate product-market fit, then add intraday.
+
+### Do Not Build a Mobile App for v1
+
+A clean React web application is sufficient to validate the product. A mobile app adds 2–3 months of work with no analytical value added. The core product is the pipeline, not the shell.
+
+### Defer Peer Comparison
+
+Comparing Ashok Leyland to Tata Motors and Eicher Motors is genuinely valuable — relative valuation and relative strength across peers is a real signal. But it is also complex to maintain (peer lists go stale, sectors reorganize) and requires additional data fetching logic. Add it in v2 once the core pipeline is validated and users are asking for it.
+
+---
 
 *Document version: 1.0 | Last updated: June 2026*

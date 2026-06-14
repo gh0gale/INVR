@@ -2,17 +2,40 @@ import asyncio
 import yfinance as yf
 import pandas as pd
 from typing import Literal
+from datetime import datetime, timedelta
 
 async def fetch_yfinance_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
-    """Fetches OHLCV data. Adds .NS for Indian markets."""
+    """Fetches OHLCV data. Adds .NS for Indian markets. Uses exact-date fallback to prevent yfinance glitches."""
     def _fetch():
-        stock = yf.Ticker(f"{ticker}.NS")
-        return stock.history(period=period, interval=interval)
-    
-    df = await asyncio.to_thread(_fetch)
-    if df.empty:
-        raise ValueError(f"No price data found for {ticker}")
-    return df
+        clean_ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+        stock = yf.Ticker(clean_ticker)
+        
+        # Attempt 1: Standard fetch
+        df = stock.history(period=period, interval=interval)
+        
+        # Attempt 2: Fallback to exact date math if yfinance quietly returns an empty dataframe
+        if df.empty:
+            days_map = {
+                "5d": 5, "1mo": 30, "3mo": 90, "6mo": 180, 
+                "1y": 365, "2y": 730, "5y": 1825, "10y": 3650
+            }
+            days_back = days_map.get(period, 365)
+            
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days_back)
+            
+            df = stock.history(
+                start=start_date.strftime('%Y-%m-%d'), 
+                end=end_date.strftime('%Y-%m-%d'), 
+                interval=interval
+            )
+            
+        if df.empty:
+            raise ValueError(f"No price data found for {ticker} using period {period}")
+            
+        return df
+
+    return await asyncio.to_thread(_fetch)
 
 async def fetch_nse_circuit_status(ticker: str, current_price: float) -> Literal["upper", "lower", "none", "unknown"]:
     """Uses nsepython to check if price is hitting circuit limits."""
@@ -40,7 +63,8 @@ async def fetch_nse_circuit_status(ticker: str, current_price: float) -> Literal
 async def fetch_yfinance_fundamentals(ticker: str) -> dict:
     """Fetches base info + deep multi-year financial statements from yfinance."""
     def _fetch():
-        stock = yf.Ticker(f"{ticker}.NS")
+        clean_ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+        stock = yf.Ticker(clean_ticker)
         info = stock.info
         
         # 1. Base Info
