@@ -1,17 +1,18 @@
-from fastapi import APIRouter
+import json
+from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 import json
 
 from app.schemas.tutor import ChatRequest
 from app.pipeline.tutor_graph import build_tutor_graph
+from app.services.memory_service import manage_session_memory
 
 router = APIRouter(tags=["Tutor System"])
 tutor_graph = build_tutor_graph()
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
-    """Streams the tutor's response back to the client token-by-token."""
+async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
     
     initial_state = {
         "messages": [HumanMessage(content=request.message)],
@@ -22,16 +23,28 @@ async def chat_stream(request: ChatRequest):
     }
 
     async def event_generator():
+        full_ai_response = ""
+        
         try:
-            # 1. Use stream_mode="messages" (The bulletproof way to stream in LangGraph)
             async for chunk, metadata in tutor_graph.astream(initial_state, stream_mode="messages"):
-                
-                # 2. Only yield chunks that are coming from the 'generate' node (ignore the router LLM)
                 if metadata.get("langgraph_node") == "generate":
                     if chunk.content:
+                        full_ai_response += chunk.content
                         yield f"data: {json.dumps({'token': chunk.content})}\n\n"
                         
             yield "data: [DONE]\n\n"
+            
+            # Delegate DB operations entirely to the service layer
+            test_user_id = "51928e80-ce4e-4846-9a40-f1fad08cb431" 
+            
+            background_tasks.add_task(
+                manage_session_memory, 
+                request.session_id, 
+                test_user_id,
+                request.message, 
+                full_ai_response,
+                topic_changed=False 
+            )
             
         except Exception as e:
             print(f"Streaming Error: {str(e)}")
