@@ -13,7 +13,10 @@ def calculate_cagr(history_list: list) -> Optional[float]:
     periods = len(history_list) - 1
     if end_val <= 0:
         return None
-    return float((end_val / start_val) ** (1 / periods) - 1)
+    try:
+        return float((end_val / start_val) ** (1 / periods) - 1)
+    except (ValueError, ZeroDivisionError, OverflowError):
+        return None
 
 def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
     df = bronze.price_history.copy()

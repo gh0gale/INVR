@@ -10,10 +10,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 # 2. The Sanity Check
-if SUPABASE_SERVICE_ROLE_KEY:
-    print(f"  [DEBUG] Loaded Key: {SUPABASE_SERVICE_ROLE_KEY[:15]}... (Length: {len(SUPABASE_SERVICE_ROLE_KEY)})")
-else:
-    print("  [DEBUG] Loaded Key: NONE")
+# (Key logging removed for security)
 
 # 3. Initialize Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)

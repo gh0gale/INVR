@@ -92,5 +92,5 @@ async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
         price_history=price_df,
         sector_history=sector_df,
         fundamentals=fundamentals,
-        institutional_activity=None 
+        institutional_activity=inst_activity 
     )
