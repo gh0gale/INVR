@@ -1,6 +1,7 @@
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -8,76 +9,75 @@ from typing import Literal
 from app.schemas.tutor import TutorState
 from app.tools.market_data import fetch_stock_news
 
-# --- 1. ROUTER CLASSIFICATION ---
+# --- 1. ROUTER CLASSIFICATION (Converted to Async) ---
 class RouteDecision(BaseModel):
     mode: Literal["definition", "portfolio", "scenario", "news"] = Field(
         description="Classify user intent: 'definition' (jargon/terms), 'portfolio' (risk/goals/holdings), 'scenario' (what to watch/buy triggers), 'news' (recent events/updates)."
     )
 
-def semantic_router_node(state: TutorState) -> TutorState:
+async def semantic_router_node(state: TutorState) -> TutorState:
     print("  [Tutor] Classifying user intent...")
+    # Initialize LLM with zero temperature for deterministic routing
     llm = ChatOllama(model="llama3.1", temperature=0.0)
     structured_llm = llm.with_structured_output(RouteDecision)
     
     last_msg = state["messages"][-1].content
-    decision = structured_llm.invoke([
-        SystemMessage(content="You are a routing supervisor. Classify the user's financial question into exactly one category based on intent."),
+    
+    decision = await structured_llm.ainvoke([
+        SystemMessage(content="""You are a routing supervisor. Classify the user's intent. 
+        CRITICAL ROUTING RULES:
+        - 'definition': ALWAYS use this if the user asks what a term, acronym, or metric means (e.g., 'What is CAGR?', 'Explain SMA').
+        - 'portfolio': Use if they ask about their personal risk, goals, or capital.
+        - 'scenario': Use if they ask what to do next, when to buy/sell, or future triggers.
+        - 'news': Use if they ask for recent events or updates."""),
         HumanMessage(content=last_msg)
     ])
     
     return {"routed_mode": decision.mode}
 
-# --- 2. TOOL EXECUTION NODE ---
+# --- 2. TOOL EXECUTION NODE (Already Async) ---
 async def news_tool_node(state: TutorState) -> TutorState:
     print("  [Tutor] Fetching live market news...")
     ticker = state["analysis_state"].get("ticker", "RELIANCE.NS")
     news_text = await fetch_stock_news(ticker)
     return {"tool_data": news_text}
 
-# --- 3. GENERATION NODE (The Tutor Brain) ---
-def generation_node(state: TutorState) -> TutorState:
+# --- 3. GENERATION NODE (Fully Optimized Async) ---
+async def generation_node(state: TutorState, config: RunnableConfig) -> TutorState:
     mode = state["routed_mode"]
     print(f"  [Tutor] Generating response via mode: {mode.upper()}...")
     
-    llm = ChatOllama(model="llama3.1", temperature=0.3) # Slight temp for conversational variety
+    llm = ChatOllama(model="llama3.1", temperature=0.3) 
     
-    # Base instructions enforcing Analogy and Quote-First directives
     sys_instruction = f"""You are an elite quantitative financial tutor.
     User Profile: Level: {state['user_profile'].get('experience_level')}, Goal: {state['user_profile'].get('goal')}.
-    Portfolio Breakdown: {state['user_profile'].get('portfolio', 'No existing portfolio')}.
     
     CRITICAL DIRECTIVES:
-    1. QUOTE-FIRST: You MUST anchor your answer using exact numbers from the provided Analysis State. 
+    1. QUOTE-FIRST: When discussing the specific stock, anchor your answer using exact numbers from the Analysis State. 
     2. ANALOGY-MAPPING: Tailor analogies to the user's experience level.
-    3. NO HALLUCINATIONS: If the user asks about a metric not in the Analysis State, say "I don't have that metric in the current analysis."
+    3. GRACEFUL FALLBACK: If the user asks to define a financial term, ALWAYS define it using a clear example. If the exact value for that metric is NOT in the Analysis State, provide the definition, but clarify: "This specific metric is not actively highlighted in the current analysis for this stock." Do not refuse to explain a concept.
     
     --- CURRENT ANALYSIS STATE ---
     {state['analysis_state']}
     """
     
-    # Inject tool data if we routed through news
     if mode == "news" and state.get("tool_data"):
         sys_instruction += f"\n\n--- LATEST NEWS ---\n{state['tool_data']}"
         sys_instruction += "\nSynthesize the recent news with the current analysis state."
-        
     elif mode == "definition":
-        sys_instruction += """
-        \nProvide a clear explanation of the requested term. 
-        Instead of repeating the overall stock verdict, use a brief, clear numeric example to show how the math works. 
-        Then, contrast the metric's typical healthy level against the specific value found in this stock's Analysis State to show why it matters here.
-        """
-        
+        sys_instruction += "\nProvide a clear explanation of the requested term. Instead of repeating the overall stock verdict, use a brief, clear numeric example to show how the math works."
     elif mode == "portfolio":
         sys_instruction += "\nEvaluate the user's question explicitly against their existing portfolio allocations and stated goals."
-        
     elif mode == "scenario":
         sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of the triggers and why they mathematically matter."
 
-    # Trim memory to last 5 interactions (10 messages + 1 new system message)
     chat_history = state["messages"][-10:]
     messages = [SystemMessage(content=sys_instruction)] + chat_history
     
-    response = llm.invoke(messages)
+    # 3. CRITICAL: Pass the 'config' to .ainvoke()
+    # This automatically unlocks token-by-token streaming back to your FastAPI route!
+    response = await llm.ainvoke(messages, config)
+    
     return {"messages": [response]}
 
 # --- 4. CONDITIONAL EDGE ---
@@ -90,6 +90,7 @@ def route_edge(state: TutorState) -> str:
 def build_tutor_graph():
     workflow = StateGraph(TutorState)
     
+    # Add nodes natively
     workflow.add_node("router", semantic_router_node)
     workflow.add_node("news_tool", news_tool_node)
     workflow.add_node("generate", generation_node)

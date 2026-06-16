@@ -41,7 +41,7 @@ def quant_engine_node(state: AnalysisState) -> AnalysisState:
 # ==========================================
 # NODE 3: The LLM Synthesizer (Platinum)
 # ==========================================
-def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
+async def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
     if state.get("errors"): return state
     
     print(f"  [Node] Passing Gold payload to LOCAL Llama-3.1 Synthesizer...")
@@ -105,8 +105,10 @@ def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
         
         chain = prompt | structured_llm
         
-        response = chain.invoke({
-            "goal": user.get('goal', 'wealth growth'),
+        # 2. Add 'await' and use '.ainvoke'
+        response = await chain.ainvoke({
+            "experience_level": user.get('experience_level', 'intermediate'),
+            "goal": user.get('goal', 'growth'),
             "risk_tolerance": user.get('risk_tolerance', 'moderate'),
             "ticker": state['ticker'],
             "timeframe": state['timeframe'],
@@ -115,7 +117,7 @@ def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
             "primary_reason": gold.primary_reason,
             "gate_results": str(gold.gate_results),
             "what_to_watch": str(gold.what_to_watch),
-            "silver_metrics": state['silver'].model_dump_json(exclude_none=True)
+            "silver_metrics": state['silver'].model_dump_json(exclude_none=True) 
         })
         
         return {"llm_output": response.model_dump()}

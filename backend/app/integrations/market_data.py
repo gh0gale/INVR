@@ -79,7 +79,7 @@ async def fetch_yfinance_fundamentals(ticker: str) -> dict:
         }
         
         try:
-            # 2. Extract Income Statement Data (yfinance returns dates as columns, newest first)
+            # Extract Income Statement Data
             fin = stock.financials
             if not fin.empty:
                 rev = fin.loc["Total Revenue"].dropna().tolist()[::-1] if "Total Revenue" in fin.index else []
@@ -88,10 +88,13 @@ async def fetch_yfinance_fundamentals(ticker: str) -> dict:
                 funds["revenue_3y"] = rev[-3:] if len(rev) >= 3 else rev
                 funds["net_profit_3y"] = net_inc[-3:] if len(net_inc) >= 3 else net_inc
                 
+                # BUG FIX: Get actual shares outstanding (default to 1 to prevent division by zero if missing)
+                shares = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding") or 1
+                
                 funds["income_statement_5y"] = {
                     "revenue": rev[-5:] if len(rev) >= 5 else rev,
                     "net_profit": net_inc[-5:] if len(net_inc) >= 5 else net_inc,
-                    "eps": [inc / 1e8 for inc in (net_inc[-5:] if len(net_inc) >= 5 else net_inc)] 
+                    "eps": [inc / shares for inc in (net_inc[-5:] if len(net_inc) >= 5 else net_inc)] 
                 }
                 
             # 3. Extract Cash Flow Data

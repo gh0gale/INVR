@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 import json
@@ -23,17 +23,18 @@ async def chat_stream(request: ChatRequest):
 
     async def event_generator():
         try:
-            # astream_events allows us to listen to internal LangGraph/LLM tokens
-            async for event in tutor_graph.astream_events(initial_state, version="v2"):
-                # Filter specifically for the LLM generating text tokens
-                if event["event"] == "on_chat_model_stream":
-                    token = event["data"]["chunk"].content
-                    if token:
-                        # Yield standard SSE format
-                        yield f"data: {json.dumps({'token': token})}\n\n"
+            # 1. Use stream_mode="messages" (The bulletproof way to stream in LangGraph)
+            async for chunk, metadata in tutor_graph.astream(initial_state, stream_mode="messages"):
+                
+                # 2. Only yield chunks that are coming from the 'generate' node (ignore the router LLM)
+                if metadata.get("langgraph_node") == "generate":
+                    if chunk.content:
+                        yield f"data: {json.dumps({'token': chunk.content})}\n\n"
                         
             yield "data: [DONE]\n\n"
+            
         except Exception as e:
+            print(f"Streaming Error: {str(e)}")
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
