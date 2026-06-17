@@ -131,7 +131,11 @@ async def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
             "silver_metrics": safe_silver
         })
         
-        return {"llm_output": response.model_dump()}
+        response_dict = response.model_dump()
+        response_dict["verdict"] = gold.verdict
+        response_dict["confidence_score"] = gold.confidence_score
+        
+        return {"llm_output": response_dict}
         
     except Exception as e:
         print(f"  [⚠️] LLM Offline/Failed. Falling back to deterministic verdict. Error: {str(e)}")

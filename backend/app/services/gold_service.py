@@ -106,7 +106,7 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
                 
         # Revenue Quality
         if silver.revenue_cagr_3y is not None:
-            if silver.revenue_cagr_3y < TH["revenue_cagr_min"]:
+            if silver.revenue_cagr_3y < (TH["revenue_cagr_min"] * 100):
                 gates["revenue_growth"] = "WARN"
                 watch_list.append(f"Revenue CAGR is lagging the {TH['revenue_cagr_min']*100}% target.")
             else:
@@ -126,7 +126,7 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         if silver.fcf_conversion is not None:
             gates["fcf_quality"] = "PASS" if silver.fcf_conversion > 0.6 else "WARN"
         if silver.eps_cagr_5y is not None:
-            if silver.eps_cagr_5y < TH["eps_cagr_min"]:
+            if silver.eps_cagr_5y < (TH["eps_cagr_min"] * 100):
                 gates["eps_growth"] = "FAIL"
                 watch_list.append("EPS compounding is too slow for a long-term hold.")
             else:

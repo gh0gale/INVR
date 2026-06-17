@@ -121,10 +121,10 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
     elif tf == "positional":
         # Fallback Chain: Try 3Y CAGR list -> Fallback to standard YoY Revenue Growth
         rev_3y = calculate_cagr(f.get("revenue_3y", []))
-        m["revenue_cagr_3y"] = rev_3y if rev_3y is not None else float(f.get("revenueGrowth", 0.0))
+        m["revenue_cagr_3y"] = (rev_3y * 100) if rev_3y is not None else float(f.get("revenueGrowth", 0.0) * 100)
         
         profit_3y = calculate_cagr(f.get("net_profit_3y", []))
-        m["profit_cagr_3y"] = profit_3y if profit_3y is not None else float(f.get("earningsGrowth", 0.0))
+        m["profit_cagr_3y"] = (profit_3y * 100) if profit_3y is not None else float(f.get("earningsGrowth", 0.0) * 100)
         
         opm = f.get("opm_trend", [])
         if len(opm) >= 2:
@@ -150,10 +150,10 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
 
         # Fallback Chain: Try 5Y CAGR list -> Fallback to YoY Growth
         rev_5y = calculate_cagr(inc.get("revenue", []))
-        m["revenue_cagr_5y"] = rev_5y if rev_5y is not None else float(f.get("revenueGrowth", 0.0))
+        m["revenue_cagr_5y"] = (rev_5y * 100) if rev_5y is not None else float(f.get("revenueGrowth", 0.0) * 100)
         
         eps_5y = calculate_cagr(inc.get("eps", []))
-        m["eps_cagr_5y"] = eps_5y if eps_5y is not None else float(f.get("earningsGrowth", 0.0))
+        m["eps_cagr_5y"] = (eps_5y * 100) if eps_5y is not None else float(f.get("earningsGrowth", 0.0) * 100)
 
         # FCF Conversion Calculation
         cfo_list = cf_5y.get("cfo", [])
@@ -187,7 +187,7 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
             m["debt_trajectory"] = "stable"
             
         pe = float(f.get("trailingPE", ratios.get("pe", 0.0)))
-        growth = m.get("eps_cagr_5y", 0.0) * 100
+        growth = m.get("eps_cagr_5y", 0.0)
         m["pe_band_vs_growth"] = float(pe / growth) if (pe > 0 and growth > 0) else pe
 
     return SilverMetrics(**m)
