@@ -138,8 +138,8 @@ Maintains a live snapshot of what components are currently running in the reposi
 | **Parallel LangGraph Routing** | Implementing parallel branches and conditional edge skipping (Stage 5). | ⏳ **Remaining** |
 | **Supabase Logging (Stage 8)** | Storing `AnalysisState` and `pipeline_version` for backtesting. | ⏳ **Remaining** |
 | **The Tutor System & RAG (Stage 9)** | `pgvector` RAG, interactive explanations, and Q&A context. | ⏳ **Remaining** |
-| **Primary Data Source Migration** | Switching from `yfinance` to Zerodha Kite Connect API. | ⏳ **Remaining** |
-| **Model Migration** | Transitioning from Ollama to Claude API (`claude-sonnet-4-20250514`). | ⏳ **Remaining** |
+<!-- | **Primary Data Source Migration** | Switching from `yfinance` to Zerodha Kite Connect API. | ⏳ **Remaining** |
+| **Model Migration** | Transitioning from Ollama to Claude API (`claude-sonnet-4-20250514`). | ⏳ **Remaining** | -->
 | **Intraday Timeframe** | VWAP, real-time feeds, sub-minute execution logic. | ⏸️ **Deferred (v2)** |
 | **Peer Comparison** | Relative valuation and relative strength against specific industry peers. | ⏸️ **Deferred (v2)** |
-| **Mobile App** | Native mobile deployment shell. | ⏸️ **Deferred (v2)** |
+

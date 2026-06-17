@@ -23,6 +23,7 @@ class SilverMetrics(BaseModel):
 
     # --- Swing Specific Fundamentals & Flows ---
     pe_vs_sector_avg: Optional[float] = None
+    trailing_pe: Optional[float] = None
     debt_flag: Optional[bool] = None
     institutional_bias: Optional[str] = None  # "buyer", "seller", "neutral"
 

@@ -119,8 +119,15 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
             if silver.current_price < silver.sma_200:
                 gates["secular_trend"] = "WARN"
                 watch_list.append(f"Wait for structural recovery above the 200-week SMA (₹{silver.sma_200:.2f}).")
-            else:
                 gates["secular_trend"] = "PASS"
+                
+        # Valuation Ceiling
+        if silver.trailing_pe is not None:
+            if silver.trailing_pe > TH.get("max_pe", 50.0):
+                gates["valuation"] = "FAIL"
+                watch_list.append(f"Valuation ceiling exceeded. PE ratio ({silver.trailing_pe}) is higher than the {TH['max_pe']} limit.")
+            else:
+                gates["valuation"] = "PASS"
                 
         # FCF and EPS
         if silver.fcf_conversion is not None:
@@ -153,7 +160,8 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         "revenue_growth": "Revenue Compounding",
         "secular_trend": "Long-Term Trend (200 DMA)",
         "fcf_quality": "Free Cash Flow Conversion",
-        "eps_growth": "EPS Compounding"
+        "eps_growth": "EPS Compounding",
+        "valuation": "Valuation Comfort Ceiling"
     }
 
     # 2. Extract exactly what failed/warned and what passed
@@ -225,7 +233,8 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         "circuit": 3.0, "death_cross": 3.0, "secular_trend": 2.0,
         "eps_growth": 2.0, "fcf_quality": 2.0, "volume": 1.5,
         "volume_spike": 1.5, "trend": 1.5, "sector": 1.5,
-        "micro_trend": 1.0, "rsi": 1.0, "revenue_growth": 1.0
+        "micro_trend": 1.0, "rsi": 1.0, "revenue_growth": 1.0,
+        "valuation": 2.0
     }
     if not gates:
         confidence_score = 50.0

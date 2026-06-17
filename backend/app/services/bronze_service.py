@@ -10,6 +10,7 @@ from app.services.cache_service import (
     get_cached_dataframe, set_cached_dataframe, 
     get_cached_dict, set_cached_dict
 )
+from app.config import settings
 
 # Hardcoded sector mapping for prototype 
 # TODO: [PRODUCTION] Move this to a Supabase lookup table.
@@ -22,7 +23,7 @@ SECTOR_INDEX_MAP = {
 }
 
 async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
-    ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+    ticker = ticker if ticker.endswith(settings.MARKET_SUFFIX) else f"{ticker}{settings.MARKET_SUFFIX}"
     manifest = get_pipeline_manifest(timeframe)
     price_df, sector_df, fundamentals, circuit = None, None, None, "none"
     

@@ -3,6 +3,7 @@ import numpy as np
 from typing import Dict, Any, Optional
 from app.schemas.bronze import BronzePayload
 from app.schemas.silver import SilverMetrics
+from config.gate_thresholds import GATE_THRESHOLDS as TH
 
 def calculate_cagr(history_list: list) -> Optional[float]:
     """Helper method to mathematically calculate CAGR from list profiles safely."""
@@ -106,7 +107,7 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
             
         # yfinance typically returns Debt/Equity as a percentage (e.g., 150 = 1.5)
         de = f.get("debtToEquity", f.get("debt_to_equity", 0.0))
-        m["debt_flag"] = bool(de > 150.0 or (0 < de < 10 and de > 1.5))
+        m["debt_flag"] = bool(de > (TH["debt_equity_max"] * 100) or (0 < de < 10 and de > TH["debt_equity_max"]))
         
         # Institutional Bias Processing Engine
         fii_net = inst.get("fii_net_activity", 0.0)
@@ -136,9 +137,10 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
             
         # Capital Return Metrics
         roe = f.get("returnOnEquity", f.get("roe", 0.0))
-        m["roe_vs_cost_of_capital"] = bool(roe > 15.0)
+        m["roe_vs_cost_of_capital"] = bool(roe > TH["roe_min"])
         
         pe = float(f.get("trailingPE", f.get("pe", 0.0)))
+        m["trailing_pe"] = pe
         sector_pe = float(f.get("sector_pe_median", 25.0))
         m["valuation_comfort"] = float(((pe - sector_pe) / sector_pe * 100) if pe and sector_pe else pe)
 
@@ -187,6 +189,7 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
             m["debt_trajectory"] = "stable"
             
         pe = float(f.get("trailingPE", ratios.get("pe", 0.0)))
+        m["trailing_pe"] = pe
         growth = m.get("eps_cagr_5y", 0.0)
         m["pe_band_vs_growth"] = float(pe / growth) if (pe > 0 and growth > 0) else pe
 

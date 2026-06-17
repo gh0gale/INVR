@@ -26,7 +26,7 @@ async def process_pipeline(payload: PipelineRequest):
 
     # 2. Invoke the LangGraph Workflow asynchronously
     try:
-        final_state = await pipeline_graph.ainvoke(initial_state)
+        final_state = await pipeline_graph.ainvoke(initial_state, config={"recursion_limit": 10})
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Graph Execution Failed: {str(e)}")
 

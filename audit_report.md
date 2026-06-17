@@ -36,20 +36,13 @@ FinAI is a well-architected financial analysis pipeline with a sound philosophic
 42. **[P4-06]** No LLM response caching — identical ticker/timeframe/profile combinations re-invoke the full LLM pipeline
 43. **[P6-02]** All logging is `print()` statements — no structured logging framework
 44. **[P6-03]** No unit tests for financial calculations — `test_gold.py` and `test_tutor.py` are integration scripts, not assertion-based unit tests
-45. **[P7-02]** `compute_silver_metrics` is synchronous — blocks the event loop during Pandas operations. Should use `asyncio.to_thread()`
-46. **[P7-03]** `evaluate_hard_gates` is synchronous — same issue
-47. **[P9-01]** Hard-coded Indian market assumptions throughout (`.NS` suffix, INR currency, NSE circuit limits, SEBI-relevant thresholds) with no localization layer
 48. **[P9-02]** No accessibility considerations — no frontend exists yet but the API responses contain no semantic structure for screen readers
-49. **[P9-03]** No mandatory regulatory disclaimers in LLM output — the system generates investment verdicts without SEBI disclosure requirements
 50. **[P9-04]** MD5 used for profile version hashing — cryptographically broken, should use SHA-256 ([profile.py:44](file:///c:/codes/INVR/INVR/backend/app/schemas/profile.py#L44))
-51. **[P8-02]** No maximum iteration guard on LangGraph graph — if a node returns state that re-triggers routing, there's no circuit breaker
 52. **[P5-03]** `Settings` class uses `os.getenv()` defaults alongside `pydantic_settings.BaseSettings` — the pydantic settings pattern should handle env loading itself, the manual `load_dotenv()` + `os.getenv()` is redundant and can cause precedence conflicts ([config.py:1-12](file:///c:/codes/INVR/INVR/backend/app/config.py#L1-L12))
 53. **[P3-05]** No Supabase logging (Stage 8) implemented — analysis results are ephemeral, no backtesting is possible
 54. **[P3-06]** Frontend directory is empty — no UI exists
 55. **[P1-08]** `sector_history` `.replace('.NS', '')` call on line 77 of `bronze_service.py` is applied to `index_ticker` which is a caret-prefixed symbol like `^CNXAUTO` that never contains `.NS` — the call is harmless but indicates copy-paste from stock ticker handling
 56. **[P4-07]** The LLM `AnalysisOutput` schema asks the LLM to echo back `verdict` and `confidence_score` — the LLM could hallucinate different values than the deterministic Gold layer computed. The echoed values should be injected post-LLM, not requested from the LLM.
-57. **[P2-12]** `debt_equity_max`, `roe_min`, `max_pe` thresholds defined in `gate_thresholds.py` are never referenced — unused configuration constants
-58. **[P6-04]** Health check endpoint returns no system info — doesn't verify DB connectivity, LLM availability, or cache state
 
 ---
 
