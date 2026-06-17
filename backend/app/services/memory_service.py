@@ -1,19 +1,5 @@
-import os
-from dotenv import load_dotenv
-from supabase import create_client, Client
+from app.database import supabase_admin as supabase
 from app.pipeline.memory_graph import extract_memory_chunk
-
-# 1. Add override=True to force Python to ignore the old cached key
-load_dotenv(override=True)
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-# 2. The Sanity Check
-# (Key logging removed for security)
-
-# 3. Initialize Supabase
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 async def manage_session_memory(session_id: str, user_id: str, user_msg: str, ai_msg: str, topic_changed: bool = False):
     """Handles chat persistence and chunked semantic extraction."""

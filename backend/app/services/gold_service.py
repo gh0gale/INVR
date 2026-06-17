@@ -178,7 +178,7 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         verdict = "BUY ON DIP"  
         reason = "Mixed technical signals, but supported by overall structural floors."
 
-    # --- STEP 2: INSTITUTIONAL VOLUME CONFIRMATION OVERRIDE ---
+    # --- STEP 1: INSTITUTIONAL VOLUME CONFIRMATION OVERRIDE ---
     # Retail moves price, institutions move volume. 
     # Validating breakouts require at least 1.5x the 20-period average volume.
     if verdict == "STRONG BUY" and silver.current_volume and silver.volume_avg_20:
@@ -188,7 +188,7 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
             reason = f"Price cleared breakout gates, but lacks institutional volume confirmation (Ratio: {volume_ratio:.2f} vs 1.5x required)."
             watch_list.append("Wait for an expansion bar with heavy volume to confirm institutional accumulation.")
 
-    # --- STEP 3: DYNAMIC "BUY ZONE" (DIP SUPPORT) FILTER ---
+    # --- STEP 2: DYNAMIC "BUY ZONE" (DIP SUPPORT) FILTER ---
     # A true dip is a pullback to structural support, not a freefall in mid-air.
     if verdict == "BUY ON DIP":
         price = silver.current_price
@@ -214,7 +214,7 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
             reason = "Asset flagged as a 'BUY ON DIP' candidate but is currently floating outside structural support zones (50/200 DMA)."
             watch_list.append("Wait for price to stabilize and touch a structural moving average floor before allocating risk.")
 
-    # --- STEP 1: TOP DOWN MACRO OVERRIDE (From previous step) ---
+    # --- STEP 3: TOP DOWN MACRO OVERRIDE (Final Authority) ---
     if silver.market_regime == "bearish" and verdict in ["STRONG BUY", "BUY ON DIP"]:
         verdict = "CAUTION"
         reason = "Market regime is strictly BEARISH. Bullish setups are suppressed to protect capital."

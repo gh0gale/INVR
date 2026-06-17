@@ -129,9 +129,9 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
         opm = f.get("opm_trend", [])
         m["opm_trend"] = "expanding" if len(opm) >= 2 and opm[-1] > opm[0] else "stable"
             
-        # Capital Return Metrics (Handling both decimal 0.15 and percentage 15.0 formats)
+        # Capital Return Metrics
         roe = f.get("returnOnEquity", f.get("roe", 0.0))
-        m["roe_vs_cost_of_capital"] = bool(roe > 0.15 or roe > 15.0)
+        m["roe_vs_cost_of_capital"] = bool(roe > 15.0)
         
         m["valuation_comfort"] = float(f.get("trailingPE", f.get("pe", 0.0)))
 
@@ -139,6 +139,7 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
         inc = f.get("income_statement_5y", {})
         bal = f.get("balance_sheet_5y", {})
         ratios = f.get("ratios", {})
+        cf_5y = f.get("cashflow_5y", {})
 
         # Fallback Chain: Try 5Y CAGR list -> Fallback to YoY Growth
         rev_5y = calculate_cagr(inc.get("revenue", []))
@@ -146,6 +147,19 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
         
         eps_5y = calculate_cagr(inc.get("eps", []))
         m["eps_cagr_5y"] = eps_5y if eps_5y is not None else float(f.get("earningsGrowth", 0.0))
+
+        # FCF Conversion Calculation
+        cfo_list = cf_5y.get("cfo", [])
+        capex_list = cf_5y.get("capex", [])
+        net_profit_list = inc.get("net_profit", [])
+        if cfo_list and capex_list and net_profit_list:
+            min_len = min(len(cfo_list), len(capex_list), len(net_profit_list))
+            if min_len > 0:
+                total_fcf = sum(cfo_list[i] - capex_list[i] for i in range(min_len))
+                total_np = sum(net_profit_list[:min_len])
+                if total_np > 0:
+                    m["fcf_conversion"] = float(total_fcf / total_np)
+            
             
         # ROE Trend Resilience Analysis
         roe_5y = ratios.get("roe_5y", [])

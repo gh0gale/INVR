@@ -73,7 +73,7 @@ async def fetch_yfinance_fundamentals(ticker: str) -> dict:
             "pe": info.get("trailingPE", 0),
             "pe_ratio": info.get("trailingPE", 0),
             "sector_pe_median": 25.0, 
-            "debt_to_equity": (info.get("debtToEquity", 0) / 100) if info.get("debtToEquity") else 0,
+            "debt_to_equity": info.get("debtToEquity", 0) if info.get("debtToEquity") else 0,
             "roe": (info.get("returnOnEquity", 0) * 100) if info.get("returnOnEquity") else 0,
             "dividend_yield": info.get("dividendYield", 0)
         }
@@ -116,7 +116,7 @@ async def fetch_yfinance_fundamentals(ticker: str) -> dict:
                 debt = bs.loc["Total Debt"].dropna().tolist()[::-1] if "Total Debt" in bs.index else []
                 funds["balance_sheet_5y"] = {
                     "total_debt": debt[-5:] if len(debt) >= 5 else debt,
-                    "book_value_per_share": [100, 110, 125, 140, 160] # Mocked BVPS for prototype stability
+                    "book_value_per_share": [100, 110, 125, 140, 160] # Mocked placeholder BVPS for stability; historical shares not reliably available via yfinance free API
                 }
                 
         except Exception as e:

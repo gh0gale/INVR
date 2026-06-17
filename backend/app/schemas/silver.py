@@ -13,9 +13,6 @@ class SilverMetrics(BaseModel):
 
     # --- Core Technical Metrics ---
     sma_20: Optional[float] = None
-
-    # --- Core Technical Metrics ---
-    sma_20: Optional[float] = None
     sma_50: Optional[float] = None
     sma_200: Optional[float] = None
     rsi_14: Optional[float] = None
