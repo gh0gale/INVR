@@ -127,13 +127,20 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
         m["profit_cagr_3y"] = profit_3y if profit_3y is not None else float(f.get("earningsGrowth", 0.0))
         
         opm = f.get("opm_trend", [])
-        m["opm_trend"] = "expanding" if len(opm) >= 2 and opm[-1] > opm[0] else "stable"
+        if len(opm) >= 2:
+            is_monotonic = all(opm[i] <= opm[i+1] for i in range(len(opm)-1))
+            is_v_shape = len(opm) >= 3 and opm[0] > opm[1] and opm[-1] > opm[0]
+            m["opm_trend"] = "expanding" if (is_monotonic or is_v_shape) else ("contracting" if opm[-1] < opm[0] else "stable")
+        else:
+            m["opm_trend"] = "stable"
             
         # Capital Return Metrics
         roe = f.get("returnOnEquity", f.get("roe", 0.0))
         m["roe_vs_cost_of_capital"] = bool(roe > 15.0)
         
-        m["valuation_comfort"] = float(f.get("trailingPE", f.get("pe", 0.0)))
+        pe = float(f.get("trailingPE", f.get("pe", 0.0)))
+        sector_pe = float(f.get("sector_pe_median", 25.0))
+        m["valuation_comfort"] = float(((pe - sector_pe) / sector_pe * 100) if pe and sector_pe else pe)
 
     elif tf == "long_term":
         inc = f.get("income_statement_5y", {})
@@ -179,6 +186,8 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
         else:
             m["debt_trajectory"] = "stable"
             
-        m["pe_band_vs_growth"] = float(f.get("trailingPE", ratios.get("pe", 0.0)))
+        pe = float(f.get("trailingPE", ratios.get("pe", 0.0)))
+        growth = m.get("eps_cagr_5y", 0.0) * 100
+        m["pe_band_vs_growth"] = float(pe / growth) if (pe > 0 and growth > 0) else pe
 
     return SilverMetrics(**m)

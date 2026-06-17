@@ -35,7 +35,7 @@ class UserProfileRequest(BaseModel):
 
 class UserProfileResponse(UserProfileRequest):
     profile_version_hash: str
-    contradictions_flagged: list[str] = []
+    contradictions_flagged: list[str] = Field(default_factory=list)
 
     @classmethod
     def create_with_hash(cls, request_data: UserProfileRequest, contradictions: list[str]) -> "UserProfileResponse":

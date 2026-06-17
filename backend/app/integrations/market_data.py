@@ -1,7 +1,6 @@
 import asyncio
 import yfinance as yf
 import pandas as pd
-from typing import Literal
 from datetime import datetime, timedelta
 
 async def fetch_yfinance_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
@@ -37,15 +36,15 @@ async def fetch_yfinance_history(ticker: str, period: str, interval: str) -> pd.
 
     return await asyncio.to_thread(_fetch)
 
-async def fetch_nse_circuit_status(ticker: str, current_price: float) -> Literal["upper", "lower", "none", "unknown"]:
+async def fetch_nse_circuit_status(ticker: str, current_price: float) -> str:
     """Uses nsepython to check if price is hitting circuit limits."""
     def _fetch():
         try:
             from nsepython import nse_quote
             quote = nse_quote(ticker)
-            # Safe parsing for circuit limits
-            upper = quote.get('priceInfo', {}).get('intraDayHighLow', {}).get('value')
-            lower = upper # Simplifying for prototype if exact lower isn't found
+            price_info = quote.get('priceInfo', {})
+            upper = price_info.get('upperCP') or price_info.get('intraDayHighLow', {}).get('value')
+            lower = price_info.get('lowerCP') or (upper * 0.9 if upper else None)
             
             if not upper or not lower:
                 return "unknown"
@@ -75,7 +74,12 @@ async def fetch_yfinance_fundamentals(ticker: str) -> dict:
             "sector_pe_median": 25.0, 
             "debt_to_equity": info.get("debtToEquity", 0) if info.get("debtToEquity") else 0,
             "roe": (info.get("returnOnEquity", 0) * 100) if info.get("returnOnEquity") else 0,
-            "dividend_yield": info.get("dividendYield", 0)
+            "dividend_yield": info.get("dividendYield", 0),
+            "ratios": {
+                "pe": info.get("trailingPE", 0), 
+                "roe_5y": [], 
+                "debt_to_equity_trend": []
+            }
         }
         
         try:

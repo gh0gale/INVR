@@ -2,7 +2,6 @@ import json
 from fastapi import APIRouter, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
-import json
 
 from app.schemas.tutor import ChatRequest
 from app.pipeline.tutor_graph import build_tutor_graph

@@ -22,16 +22,19 @@ async def fetch_data_node(state: AnalysisState) -> AnalysisState:
 # ==========================================
 # NODE 2: Quantitative Engine (Silver & Gold)
 # ==========================================
-def quant_engine_node(state: AnalysisState) -> AnalysisState:
+import asyncio
+async def quant_engine_node(state: AnalysisState) -> AnalysisState:
     if state.get("errors"): return state # Skip if previous node failed
     
     print(f"  [Node] Executing Quant Math & Hard Gates...")
     try:
-        silver = compute_silver_metrics(state['bronze'])
-        gold = evaluate_hard_gates(
-            silver=silver, 
-            circuit_status=state['bronze'].circuit_status,
-            available_capital=state['user_profile']['available_capital']
+        # P7-01: Offload synchronous Pandas math to background thread
+        silver = await asyncio.to_thread(compute_silver_metrics, state['bronze'])
+        gold = await asyncio.to_thread(
+            evaluate_hard_gates,
+            silver, 
+            state['bronze'].circuit_status,
+            state['user_profile']['available_capital']
         )
         return {"silver": silver, "gold": gold}
     except Exception as e:
@@ -91,10 +94,14 @@ async def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
             Gate Results: {gate_results}
             
             Actionable Conditions from System:
+            <conditions>
             {what_to_watch}
+            </conditions>
             
             Raw Quantitative Metrics (Silver Layer):
+            <metrics>
             {silver_metrics}
+            </metrics>
             
             User Profile:
             - Goal: {goal}
@@ -106,6 +113,10 @@ async def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
         chain = prompt | structured_llm
         
         # 2. Add 'await' and use '.ainvoke'
+        # Sanitize untrusted input to prevent prompt injection
+        safe_silver = state['silver'].model_dump_json(exclude_none=True).replace("<", "&lt;").replace(">", "&gt;")
+        safe_watch = str(gold.what_to_watch).replace("<", "&lt;").replace(">", "&gt;")
+
         response = await chain.ainvoke({
             "experience_level": user.get('experience_level', 'intermediate'),
             "goal": user.get('goal', 'growth'),
@@ -116,14 +127,27 @@ async def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
             "confidence_score": gold.confidence_score,
             "primary_reason": gold.primary_reason,
             "gate_results": str(gold.gate_results),
-            "what_to_watch": str(gold.what_to_watch),
-            "silver_metrics": state['silver'].model_dump_json(exclude_none=True) 
+            "what_to_watch": safe_watch,
+            "silver_metrics": safe_silver
         })
         
         return {"llm_output": response.model_dump()}
         
     except Exception as e:
-        return {"errors": [f"Local LLM Error: {str(e)}"]}
+        print(f"  [⚠️] LLM Offline/Failed. Falling back to deterministic verdict. Error: {str(e)}")
+        return {
+            "llm_output": {
+                "verdict": gold.verdict,
+                "confidence_score": gold.confidence_score,
+                "personalized_reasoning": [
+                    "SYSTEM NOTICE: AI Synthesizer is currently offline.",
+                    f"DETERMINISTIC VERDICT: {gold.verdict}",
+                    f"PRIMARY REASON: {gold.primary_reason}"
+                ],
+                "what_to_watch": gold.what_to_watch,
+                "tutor_triggers": ["LLM_OFFLINE", "FALLBACK"]
+            }
+        }
 
 # ==========================================
 # GRAPH COMPILATION

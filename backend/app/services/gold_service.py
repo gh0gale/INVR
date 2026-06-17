@@ -95,7 +95,7 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         # Death Cross Gate
         if silver.sma_50 and silver.sma_200 and silver.sma_gap_pct is not None:
             if silver.sma_50 < silver.sma_200:
-                if silver.sma_gap_pct > TH["death_cross_gap_pct"]:
+                if abs(silver.sma_gap_pct) > TH["death_cross_gap_pct"]:
                     gates["death_cross"] = "FAIL"
                     watch_list.append("Confirmed Death Cross. Avoid until 50-day SMA reclaims 200-day SMA.")
                 else:
@@ -220,8 +220,19 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         reason = "Market regime is strictly BEARISH. Bullish setups are suppressed to protect capital."
         watch_list.append("Avoid deploying new capital until the broader index reclaims its moving averages.")
 
-    # Base Confidence Calculation
-    confidence_score = 50.0 + ((passed_count / total_active) * 45.0) if total_active > 0 else 50.0
+    # Weighted Confidence Calculation
+    GATE_WEIGHTS = {
+        "circuit": 3.0, "death_cross": 3.0, "secular_trend": 2.0,
+        "eps_growth": 2.0, "fcf_quality": 2.0, "volume": 1.5,
+        "volume_spike": 1.5, "trend": 1.5, "sector": 1.5,
+        "micro_trend": 1.0, "rsi": 1.0, "revenue_growth": 1.0
+    }
+    if not gates:
+        confidence_score = 50.0
+    else:
+        total_weight = sum(GATE_WEIGHTS.get(k, 1.0) for k in gates.keys())
+        passed_weight = sum(GATE_WEIGHTS.get(k, 1.0) for k, v in gates.items() if v == "PASS")
+        confidence_score = 50.0 + ((passed_weight / total_weight) * 45.0)
 
     # =========================================================
     # TRADE SETUP (Arithmetic generation - Only if STRONG BUY)

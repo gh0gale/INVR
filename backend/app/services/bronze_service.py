@@ -22,6 +22,7 @@ SECTOR_INDEX_MAP = {
 }
 
 async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
+    ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
     manifest = get_pipeline_manifest(timeframe)
     price_df, sector_df, fundamentals, circuit = None, None, None, "none"
     
@@ -74,7 +75,7 @@ async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
             cache_key_sector = f"sector:{index_ticker}:{manifest['period']}:{manifest['interval']}"
             sector_df = await get_cached_dataframe(cache_key_sector, ttl)
             if sector_df is None:
-                sector_df = await fetch_yfinance_history(index_ticker.replace('.NS', ''), manifest['period'], manifest['interval'])
+                sector_df = await fetch_yfinance_history(index_ticker, manifest['period'], manifest['interval'])
                 await set_cached_dataframe(cache_key_sector, sector_df, ttl)
 
 

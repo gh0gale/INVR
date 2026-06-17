@@ -3,12 +3,12 @@
 **/.env
 
 
-# # Local Cache
-# **/.local_cache/
+# Local Cache
+**/.local_cache/
 
-# # Virtual environments
-# backend/.venv/
-# backend/venv/
+# Virtual environments
+backend/.venv/
+backend/venv/
 
 
 
