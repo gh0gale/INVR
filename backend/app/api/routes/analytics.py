@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from app.schemas.api import PipelineRequest, PipelineResponse
 from app.orchestrator import build_pipeline_graph
+
+from app.services.ledger_service import log_prediction_to_ledger
 
 router = APIRouter()
 
@@ -8,7 +10,7 @@ router = APIRouter()
 pipeline_graph = build_pipeline_graph()
 
 @router.post("/process", response_model=PipelineResponse)
-async def process_pipeline(payload: PipelineRequest):
+async def process_pipeline(payload: PipelineRequest, background_tasks: BackgroundTasks):
     """
     Triggers the Medallion Data Pipeline and LangGraph orchestrator for a specific ticker.
     """
@@ -41,8 +43,24 @@ async def process_pipeline(payload: PipelineRequest):
             errors=final_state["errors"]
         )
 
-    # 4. Extract Gold Verdict and the Local LLM Synthesizer output
-    gold_verdict = final_state["gold"].verdict if final_state.get("gold") else "UNKNOWN"
+    # --- 4. STAGE 8: HYBRID LEDGER LOGGING (Fire & Forget) ---
+    if final_state.get("silver") and final_state.get("gold"):
+        
+        # Safely convert Pydantic models to dicts if they aren't already
+        silver_data = final_state["silver"].model_dump() if hasattr(final_state["silver"], "model_dump") else final_state["silver"]
+        gold_data = final_state["gold"].model_dump() if hasattr(final_state["gold"], "model_dump") else final_state["gold"]
+        
+        # Safely grab session_id (default to a system tag if called outside of a chat context)
+        session_id = getattr(payload, "session_id", "analytics-api-execution")
+
+        background_tasks.add_task(
+            log_prediction_to_ledger,
+            session_id,
+            silver_data,
+            gold_data
+        )
+    # 5. Extract Gold Verdict and the Local LLM Synthesizer output
+    gold_verdict = final_state["gold"].verdict if hasattr(final_state.get("gold"), "verdict") else "UNKNOWN"
 
     return PipelineResponse(
         success=True,

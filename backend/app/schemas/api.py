@@ -11,6 +11,7 @@ class PipelineRequest(BaseModel):
     ticker: str = Field(..., description="NSE Stock ticker symbol (e.g., RELIANCE.NS)")
     timeframe: str = Field(..., description="swing | positional | long_term")
     user_profile: Optional[APIUserProfile] = Field(default_factory=APIUserProfile)
+    session_id: Optional[str] = None
 
 class PipelineResponse(BaseModel):
     success: bool

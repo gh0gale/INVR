@@ -135,11 +135,9 @@ Maintains a live snapshot of what components are currently running in the reposi
 | **Gate Logic (Gold)** | Evaluation matrices for Swing, Positional, Long-Term timeframes. | ✅ **Done** |
 | **Trade Math** | Volatility-adjusted trade setup and position sizing. | ✅ **Done** |
 | **LLM Integration** | Orchestration via local `llama3.1` with Pydantic outputs. | ✅ **Done** |
-| **Parallel LangGraph Routing** | Implementing parallel branches and conditional edge skipping (Stage 5). | ⏳ **Remaining** |
+| **Parallel LangGraph Routing** | Implementing parallel branches and conditional edge skipping (Stage 5). | ✅ **Done** |
 | **Supabase Logging (Stage 8)** | Storing `AnalysisState` and `pipeline_version` for backtesting. | ⏳ **Remaining** |
-| **The Tutor System & RAG (Stage 9)** | `pgvector` RAG, interactive explanations, and Q&A context. | ⏳ **Remaining** |
-<!-- | **Primary Data Source Migration** | Switching from `yfinance` to Zerodha Kite Connect API. | ⏳ **Remaining** |
-| **Model Migration** | Transitioning from Ollama to Claude API (`claude-sonnet-4-20250514`). | ⏳ **Remaining** | -->
+| **The Tutor System & RAG (Stage 9)** | `pgvector` RAG, interactive explanations, and Q&A context. | ✅ **Done** |
 | **Intraday Timeframe** | VWAP, real-time feeds, sub-minute execution logic. | ⏸️ **Deferred (v2)** |
 | **Peer Comparison** | Relative valuation and relative strength against specific industry peers. | ⏸️ **Deferred (v2)** |
 
