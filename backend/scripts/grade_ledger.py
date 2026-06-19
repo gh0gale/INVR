@@ -1,4 +1,5 @@
 import os
+import time
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
@@ -36,6 +37,7 @@ def grade_trades():
             end_dt = start_dt + timedelta(days=days_to_wait + 10)
             
             try:
+                time.sleep(0.5)
                 df = yf.download(ticker, start=start_dt.strftime("%Y-%m-%d"), end=end_dt.strftime("%Y-%m-%d"), progress=False)
                 if df.empty: continue
                 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
