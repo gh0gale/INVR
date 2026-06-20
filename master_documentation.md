@@ -1316,8 +1316,8 @@ python test_pipeline.py
 | **Auth on Tutor Endpoint** | ❌ Missing | Hardcoded test user ID in production code |
 | **CORS Middleware** | ❌ Missing | No CORS configured on FastAPI |
 | **Rate Limiting** | ❌ Missing | No rate limiting on any endpoint |
-| **Structured Logging** | ❌ Missing | All logging via `print()` |
-| **Unit Tests (pytest)** | ❌ Missing | No assertion-based tests for financial math |
+| **Structured Logging** | ✅ Done | Replaced `print()` with `logging` module across the app |
+| **Unit Tests (pytest)** | ✅ Done | Added assertion-based tests for financial math (`test_silver_math.py`) |
 | **Frontend** | ❌ Not Started | `frontend/` directory is empty |
 | **RAG Vector Search** | ❌ Not Started | Tutor uses pure LLM, no pgvector/embedding retrieval |
 | **Redis Cache** | ❌ Not Started | Declared as dependency but not implemented |
@@ -1353,26 +1353,17 @@ python test_pipeline.py
 | ID | Description | Impact |
 |---|---|---|
 | P0-06 | `redis` declared but never imported | Unnecessary dependency weight |
-| P6-01 | No rate limiting | Single client can flood expensive LLM calls |
-| Bug | `secular_trend` gate overwritten to PASS immediately after WARN | Long-term secular trend gate is non-functional |
+| P6-01 | No rate limiting (Middleware missing) | Single client can flood expensive LLM calls |
 
 ### Low Priority / Optimizations
 
 | ID | Description |
 |---|---|
 | P9-04 | MD5 for profile hashing — should be SHA-256 |
-| P6-02 | All logging via `print()` — no structured logging |
-| P6-03 | No pytest unit tests for financial calculations |
 | P5-03 | `Settings` class mixes `os.getenv()` with `pydantic_settings` |
 | P1-01 | Institutional activity data is entirely hardcoded mock |
 | P1-02 | Book value per share is hardcoded mock data |
 | P4-03 | Analysis state truncated to 2000 chars in tutor — no token counting |
-| P10-01 | `grade_ledger.py` only implements swing (15-day) grading — no positional/long-term horizons |
-| P10-02 | `simulate_live_history.py` only evaluates RSI and volume gates — does not run full `evaluate_hard_gates()` |
-| P10-03 | `analyze_drift.py` only checks RSI overbought and volume ratio — no drift checks for death cross, sector RS, or valuation gates |
-| P10-04 | `grade_ledger.py` uses fixed ±5% win/loss thresholds instead of the actual ATR-based trade setup targets |
-| P10-05 | `ledger_service.py` creates its own Supabase client instead of using `database.py` |
-| P10-06 | CI/CD uses Python 3.12 while the project requires Python 3.14+ — potential compatibility issues |
 
 ---
 
@@ -1384,16 +1375,16 @@ python test_pipeline.py
 - [ ] Remove hardcoded test user ID from tutor route
 - [ ] Add CORS middleware (restrict to frontend origin)
 - [ ] Add rate limiting via `slowapi` (10/minute for analytics, 30/minute for tutor)
-- [ ] Fix secular_trend gate PASS overwrite bug
+- [x] Fix secular_trend gate PASS overwrite bug
 - [ ] Remove or document mock data (institutional activity, sector PE, BVPS)
 - [ ] Replace MD5 with SHA-256 for profile hashing
-- [ ] Replace `print()` with structured `logging` module
-- [ ] Fix `ledger_service.py` to use centralized Supabase client from `database.py`
+- [x] Replace `print()` with structured `logging` module
+- [x] Fix `ledger_service.py` to use centralized Supabase client from `database.py`
 - [ ] Fix `Settings` class to use pydantic-settings properly (remove `os.getenv()` calls)
 
 ### v1.2 — Testing & Quality
 
-- [ ] Create `tests/` directory with pytest unit tests for:
+- [x] Create `tests/` directory with pytest unit tests for:
   - `calculate_cagr()` edge cases (negative, zero, single element)
   - RSI calculation against known reference values
   - ATR calculation verification
@@ -1405,11 +1396,11 @@ python test_pipeline.py
 
 ### v1.3 — Engine Room Expansion
 
-- [ ] Add positional (90-day) and long-term (365-day) grading horizons to `grade_ledger.py`
-- [ ] Use actual ATR-based trade setup targets for win/loss grading instead of fixed ±5%
-- [ ] Run full `evaluate_hard_gates()` in `simulate_live_history.py` instead of partial gate checks
-- [ ] Add more drift checks: death cross gap, sector RS threshold, valuation ceiling, EPS CAGR floor
-- [ ] Align CI/CD Python version with project requirement (3.14+)
+- [x] Add positional (90-day) and long-term (365-day) grading horizons to `grade_ledger.py`
+- [x] Use actual ATR-based trade setup targets for win/loss grading instead of fixed ±5%
+- [x] Run full `evaluate_hard_gates()` in `simulate_live_history.py` instead of partial gate checks
+- [x] Add more drift checks: death cross gap, sector RS threshold, valuation ceiling, EPS CAGR floor
+- [x] Align CI/CD Python version with project requirement (3.14+)
 - [ ] Build admin dashboard for viewing `threshold_insights` data
 
 ### v2.0 — Frontend & UX

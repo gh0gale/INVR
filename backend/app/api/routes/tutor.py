@@ -1,5 +1,5 @@
 import json
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Request, Depends
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from slowapi import Limiter
@@ -12,13 +12,15 @@ from app.schemas.tutor import ChatRequest
 from app.pipeline.tutor_graph import build_tutor_graph
 from app.services.memory_service import manage_session_memory
 
+from app.api.deps import get_current_user_id
+
 router = APIRouter(tags=["Tutor System"])
 limiter = Limiter(key_func=get_remote_address)
 tutor_graph = build_tutor_graph()
 
 @router.post("/chat/stream")
-@limiter.limit("10/minute")
-async def chat_stream(request: Request, request_data: ChatRequest, background_tasks: BackgroundTasks):
+@limiter.limit("30/minute")
+async def chat_stream(request: Request, request_data: ChatRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user_id)):
     
     initial_state = {
         "messages": [HumanMessage(content=request_data.message)],
@@ -40,13 +42,10 @@ async def chat_stream(request: Request, request_data: ChatRequest, background_ta
                         
             yield "data: [DONE]\n\n"
             
-            # Delegate DB operations entirely to the service layer
-            test_user_id = "51928e80-ce4e-4846-9a40-f1fad08cb431" 
-            
             background_tasks.add_task(
                 manage_session_memory, 
                 request_data.session_id, 
-                test_user_id,
+                user_id,
                 request_data.message, 
                 full_ai_response,
                 topic_changed=False 

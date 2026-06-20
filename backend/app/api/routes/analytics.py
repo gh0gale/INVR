@@ -1,20 +1,18 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Depends 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from app.schemas.api import PipelineRequest, PipelineResponse
 from app.orchestrator import build_pipeline_graph
-
 from app.services.ledger_service import log_prediction_to_ledger
+from app.api.deps import get_current_user_id
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
-
-# Compile the LangGraph workflow once when the application boots
 pipeline_graph = build_pipeline_graph()
 
 @router.post("/process", response_model=PipelineResponse)
 @limiter.limit("10/minute")
-async def process_pipeline(request: Request, payload: PipelineRequest, background_tasks: BackgroundTasks):
+async def process_pipeline(request: Request, payload: PipelineRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user_id)):
     """
     Triggers the Medallion Data Pipeline and LangGraph orchestrator for a specific ticker.
     """
