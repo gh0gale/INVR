@@ -1,17 +1,113 @@
-import { useRef } from 'react';
-import { motion, useMotionValue, useTransform, useSpring } from 'framer-motion';
+import { useRef, useState } from 'react';
+import { motion, AnimatePresence, useMotionValue, useTransform, useSpring, useScroll } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Menu, X } from 'lucide-react';
+
+// ==========================================
+// GLASS STYLE SYSTEM
+// Layered optical glass — specular top/left
+// highlight, dark bottom/right edge shadow,
+// saturated blur for true refraction depth.
+// ==========================================
+const glass = {
+    base: {
+        background: 'linear-gradient(145deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.028) 100%)',
+        backdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+        WebkitBackdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+        border: '1px solid rgba(255,255,255,0.13)',
+        boxShadow: [
+            'inset 0 1.5px 0 rgba(255,255,255,0.26)',
+            'inset 1.5px 0 0 rgba(255,255,255,0.09)',
+            'inset -1px 0 0 rgba(0,0,0,0.08)',
+            'inset 0 -1.5px 0 rgba(0,0,0,0.10)',
+            '0 40px 100px rgba(0,0,0,0.52)',
+            '0 8px 20px rgba(0,0,0,0.28)',
+        ].join(', '),
+    } as React.CSSProperties,
+
+    nested: {
+        background: 'linear-gradient(145deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.01) 100%)',
+        backdropFilter: 'blur(40px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(40px) saturate(180%)',
+        border: '1px solid rgba(255,255,255,0.085)',
+        boxShadow: [
+            'inset 0 1px 0 rgba(255,255,255,0.20)',
+            'inset 1px 0 0 rgba(255,255,255,0.06)',
+            '0 8px 32px rgba(0,0,0,0.22)',
+        ].join(', '),
+    } as React.CSSProperties,
+
+    pill: {
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)',
+        backdropFilter: 'blur(24px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.20), 0 4px 12px rgba(0,0,0,0.15)',
+    } as React.CSSProperties,
+};
+
+// Shared physics curve — every hover/tap in the page pulls from this
+// single spring so the whole UI feels like one consistent material.
+const springPress = { type: 'spring', stiffness: 420, damping: 26, mass: 0.6 } as const;
+const springSoft = { type: 'spring', stiffness: 220, damping: 28, mass: 0.9 } as const;
+
+// ==========================================
+// PRICE SERIES — six months of (illustrative)
+// price action with real drawdowns and a
+// recovery leg, not a single smooth arc.
+// ==========================================
+const RELIANCE_PRICES = [
+    2652, 2638, 2671, 2659, 2694, 2683, 2705, 2691,
+    2718, 2702, 2734, 2712, 2696, 2671, 2648, 2665,
+    2689, 2716, 2748, 2731, 2709, 2742, 2771, 2758,
+    2733, 2761, 2789, 2774, 2802, 2826, 2811, 2793,
+    2818, 2841, 2829, 2847.5,
+];
+const CHART_MONTH_LABELS = ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'];
+const CHART_W = 400;
+const CHART_H = 96;
+const CHART_PAD = 8;
+
+// Maps a raw price series into the chart's coordinate space, then
+// smooths it through a Catmull-Rom-to-Bezier spline so the line reads
+// as continuous price action rather than a single decorative swoop.
+function buildPriceChart(prices: number[]) {
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const range = max - min || 1;
+
+    const points = prices.map((p, i) => ({
+        x: (i / (prices.length - 1)) * CHART_W,
+        y: CHART_PAD + (1 - (p - min) / range) * (CHART_H - CHART_PAD * 2),
+    }));
+
+    let line = `M${points[0].x},${points[0].y}`;
+    for (let i = 0; i < points.length - 1; i++) {
+        const p0 = points[i - 1] || points[i];
+        const p1 = points[i];
+        const p2 = points[i + 1];
+        const p3 = points[i + 2] || p2;
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = p1.y + (p2.y - p0.y) / 6;
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = p2.y - (p3.y - p1.y) / 6;
+        line += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+    }
+
+    const area = `${line} L${CHART_W},${CHART_H} L0,${CHART_H} Z`;
+    return { line, area, last: points[points.length - 1] };
+}
+
+const PRICE_CHART = buildPriceChart(RELIANCE_PRICES);
 
 // ==========================================
 // 1. THREE.JS: Continuous Market Data Stream
 // ==========================================
 function DataPoints() {
     const pointsRef = useRef<any>();
-
-    // INCREASED VISIBILITY: More points, larger distribution
     const count = 2500;
+
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
         positions[i * 3] = (Math.random() - 0.5) * 35;
@@ -36,7 +132,6 @@ function DataPoints() {
                     itemSize={3}
                 />
             </bufferGeometry>
-            {/* INCREASED VISIBILITY: Larger size, higher opacity */}
             <pointsMaterial size={0.045} color="#10B981" transparent opacity={0.8} sizeAttenuation />
         </points>
     );
@@ -47,6 +142,10 @@ function DataPoints() {
 // ==========================================
 export default function Landing() {
     const navigate = useNavigate();
+
+    const navItems = ['Features', 'Methodology', 'How it Works'];
+    const [activeNav, setActiveNav] = useState(0);
+    const [mobileOpen, setMobileOpen] = useState(false);
 
     // 3D Tilt Effect for the Hero Card
     const x = useMotionValue(0);
@@ -73,11 +172,65 @@ export default function Landing() {
         y.set(0);
     };
 
+    // Page-level scroll progress — drives the nav surface and the
+    // hero's gentle compression as the page is read.
+    const { scrollYProgress: pageScroll } = useScroll();
+    const navSurface = useTransform(pageScroll, [0, 0.04], [0, 1]);
+    const heroOpacity = useTransform(pageScroll, [0, 0.1], [1, 0.55]);
+    const heroScale = useTransform(pageScroll, [0, 0.1], [1, 0.97]);
+    const heroY = useTransform(pageScroll, [0, 0.1], [0, -24]);
+
+    // Scroll Animation for the Narrative Lineage
+    const narrativeRef = useRef(null);
+    const { scrollYProgress } = useScroll({
+        target: narrativeRef,
+        offset: ["start center", "end center"],
+    });
+
+    const orbY = useTransform(scrollYProgress, [0, 1], ["0%", "100%"]);
+    const orbScale = useTransform(scrollYProgress, [0, 0.5, 1], [1, 1.5, 1]);
+
+    // Class names spelled out in full per phase (not interpolated) so
+    // Tailwind's JIT compiler can actually discover and generate them.
+    const phases = [
+        {
+            num: '01',
+            eyebrow: 'Phase 01 / The Discovery',
+            title: 'Curiosity meets computation.',
+            body:
+                "Cut through the noise. Stop scrolling social feeds hoping for conviction. Input a ticker and watch the engine instantly dissect decades of SEC filings, historical price action, and institutional flow in milliseconds.",
+            align: 'self-start' as const,
+            edgeClass: 'absolute -left-12 top-10 w-24 h-[1px] bg-emerald-500/20 hidden md:block',
+            eyebrowClass: 'text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-1.5',
+        },
+        {
+            num: '02',
+            eyebrow: 'Phase 02 / The Interrogation',
+            title: 'Emotional detachment by design.',
+            body:
+                "No bias. No bags. The system ruthlessly forces the asset through strict quantitative hard-gates — comparing trailing valuations, momentum convergence, and sector relative strength against absolute market medians.",
+            align: 'self-end' as const,
+            edgeClass: 'absolute -right-12 top-10 w-24 h-[1px] bg-teal-500/20 hidden md:block',
+            eyebrowClass: 'text-[11px] font-bold tracking-[0.15em] uppercase text-teal-400 mb-1.5',
+        },
+        {
+            num: '03',
+            eyebrow: 'Phase 03 / The Execution',
+            title: 'Execute with conviction.',
+            body:
+                "Receive a crystal-clear, deterministic verdict. Know your exact entry parameters, understand the mathematical risk vector, and deploy your capital like a top-tier institutional fund. Get it done.",
+            align: 'self-start' as const,
+            edgeClass: 'absolute -left-12 top-10 w-24 h-[1px] bg-emerald-500/20 hidden md:block',
+            eyebrowClass: 'text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-1.5',
+        },
+    ];
+
     return (
-        <div className="relative w-full min-h-screen bg-[#030508] text-white overflow-hidden">
+        <div className="relative w-full min-h-screen bg-[#030508] text-white overflow-hidden font-sans">
             {/* =========================================
-                FIXED BACKGROUNDS (Stays during entire scroll)
-            ============================================= */}
+          FIXED BACKGROUNDS — organic, breathing,
+          never a static dead layer.
+      ============================================= */}
             <div className="fixed inset-0 z-0 bg-grid pointer-events-none opacity-50" />
             <div className="fixed inset-0 z-0 mix-blend-screen pointer-events-none">
                 <Canvas camera={{ position: [0, 0, 5] }}>
@@ -85,32 +238,148 @@ export default function Landing() {
                 </Canvas>
             </div>
 
-            {/* Adjusted Ambient Glows to pure Teal/Emerald (No blues/purples) */}
-            <div className="fixed top-[-10%] right-[-5%] w-[800px] h-[800px] bg-emerald-500/10 rounded-full blur-[150px] pointer-events-none" />
-            <div className="fixed bottom-[-10%] left-[-5%] w-[600px] h-[600px] bg-teal-500/10 rounded-full blur-[150px] pointer-events-none" />
+            <motion.div
+                className="fixed top-[-10%] right-[-5%] w-[800px] h-[800px] bg-emerald-500/10 blur-[150px] pointer-events-none"
+                initial={{ borderRadius: '50%' }}
+                animate={{
+                    x: [0, 40, -25, 0],
+                    y: [0, -30, 20, 0],
+                    scale: [1, 1.15, 0.94, 1],
+                    borderRadius: ['50%', '42% 58% 60% 40% / 50% 45% 55% 50%', '58% 42% 40% 60% / 45% 55% 45% 55%', '50%'],
+                }}
+                transition={{ duration: 24, repeat: Infinity, ease: 'easeInOut' }}
+            />
+            <motion.div
+                className="fixed bottom-[-10%] left-[-5%] w-[600px] h-[600px] bg-teal-500/10 blur-[150px] pointer-events-none"
+                initial={{ borderRadius: '50%' }}
+                animate={{
+                    x: [0, -30, 30, 0],
+                    y: [0, 25, -25, 0],
+                    scale: [1, 0.9, 1.12, 1],
+                    borderRadius: ['50%', '60% 40% 38% 62% / 55% 45% 55% 45%', '40% 60% 62% 38% / 45% 55% 45% 55%', '50%'],
+                }}
+                transition={{ duration: 28, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+            />
 
             {/* =========================================
-                TOP NAVIGATION
-            ============================================= */}
+          TOP NAVIGATION
+      ============================================= */}
+            <motion.div
+                className="fixed top-0 inset-x-0 h-24 z-40 pointer-events-none"
+                style={{
+                    opacity: navSurface,
+                    background: 'linear-gradient(180deg, rgba(3,5,8,0.7) 0%, rgba(3,5,8,0) 100%)',
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                }}
+            />
             <nav className="absolute top-0 w-full px-8 md:px-16 py-8 flex justify-between items-center z-50">
-                <div className="font-sans font-bold text-2xl tracking-tighter text-white flex items-center gap-2">
+                <div className="font-bold text-2xl tracking-tighter text-white flex items-center gap-2">
                     INVR<span className="text-emerald-500">.</span>
                 </div>
-                <div className="hidden md:flex gap-8 text-sm font-medium text-white/50">
-                    <span className="hover:text-white cursor-pointer transition-colors tracking-tight">Features</span>
-                    <span className="hover:text-white cursor-pointer transition-colors tracking-tight">Methodology</span>
-                    <span className="hover:text-white cursor-pointer transition-colors tracking-tight">How it Works</span>
+
+                <div
+                    className="hidden md:flex gap-1 items-center px-2 py-2 rounded-[1.25rem]"
+                    style={glass.pill}
+                >
+                    {navItems.map((item, i) => (
+                        <span
+                            key={item}
+                            onClick={() => setActiveNav(i)}
+                            className={`relative px-5 py-2 text-sm font-bold tracking-tighter cursor-pointer transition-colors rounded-[0.875rem] ${activeNav === i ? 'text-white' : 'text-white/50 hover:text-white'
+                                }`}
+                        >
+                            {activeNav === i && (
+                                <motion.div
+                                    layoutId="nav-active-pill"
+                                    className="absolute inset-0 rounded-[0.875rem] bg-white/[0.07]"
+                                    style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)' }}
+                                    transition={springSoft}
+                                />
+                            )}
+                            <span className="relative z-10">{item}</span>
+                        </span>
+                    ))}
                 </div>
-                <button className="hidden md:block px-6 py-2.5 text-sm font-bold tracking-tight rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors backdrop-blur-md">
+
+                <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    transition={springPress}
+                    className="hidden md:block px-6 py-2.5 text-sm font-bold tracking-tighter rounded-[1rem] hover:bg-white/[0.08] transition-colors text-white"
+                    style={glass.pill}
+                >
                     Client Login
-                </button>
+                </motion.button>
+
+                {/* Mobile trigger */}
+                <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    transition={springPress}
+                    onClick={() => setMobileOpen((v) => !v)}
+                    className="md:hidden w-11 h-11 flex items-center justify-center rounded-[1rem] text-white"
+                    style={glass.pill}
+                >
+                    <AnimatePresence mode="wait" initial={false}>
+                        {mobileOpen ? (
+                            <motion.span
+                                key="close"
+                                initial={{ rotate: -90, opacity: 0 }}
+                                animate={{ rotate: 0, opacity: 1 }}
+                                exit={{ rotate: 90, opacity: 0 }}
+                                transition={springPress}
+                            >
+                                <X className="w-5 h-5" />
+                            </motion.span>
+                        ) : (
+                            <motion.span
+                                key="menu"
+                                initial={{ rotate: 90, opacity: 0 }}
+                                animate={{ rotate: 0, opacity: 1 }}
+                                exit={{ rotate: -90, opacity: 0 }}
+                                transition={springPress}
+                            >
+                                <Menu className="w-5 h-5" />
+                            </motion.span>
+                        )}
+                    </AnimatePresence>
+                </motion.button>
             </nav>
 
+            <AnimatePresence>
+                {mobileOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -16, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -16, scale: 0.96 }}
+                        transition={springSoft}
+                        className="md:hidden fixed top-24 right-8 z-50 flex flex-col gap-1 p-3 rounded-[1.5rem] min-w-[200px]"
+                        style={glass.base}
+                    >
+                        {navItems.map((item, i) => (
+                            <span
+                                key={item}
+                                onClick={() => {
+                                    setActiveNav(i);
+                                    setMobileOpen(false);
+                                }}
+                                className="px-4 py-3 text-sm font-bold tracking-tighter text-white/70 hover:text-white rounded-[1rem] hover:bg-white/[0.06] cursor-pointer transition-colors"
+                            >
+                                {item}
+                            </span>
+                        ))}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* =========================================
-                SECTION 1: HERO (100vh)
-            ============================================= */}
+          SECTION 1: HERO (100vh)
+      ============================================= */}
             <section className="relative z-10 w-full min-h-screen flex items-center pt-20">
-                <div className="w-full max-w-7xl mx-auto px-8 md:px-16 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+                <motion.div
+                    style={{ opacity: heroOpacity, scale: heroScale, y: heroY }}
+                    className="w-full max-w-7xl mx-auto px-8 md:px-16 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center"
+                >
 
                     {/* LEFT COLUMN: Hero Copy */}
                     <motion.div
@@ -119,14 +388,19 @@ export default function Landing() {
                         transition={{ duration: 0.8, ease: "easeOut" }}
                         className="flex flex-col items-start text-left"
                     >
-                        {/* Synchronized Typography */}
                         <h1 className="text-5xl md:text-[5.5rem] font-bold tracking-tighter mb-6 leading-[1.02] text-white">
                             Structured <br />
-                            <span className="text-gradient-finance">Intelligence</span> for <br />
+                            <motion.span
+                                className="text-gradient-finance inline-block"
+                                animate={{ y: [0, -5, 0] }}
+                                transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+                            >
+                                Intelligence
+                            </motion.span>{' '}for <br />
                             Modern Investors.
                         </h1>
 
-                        <p className="text-white/60 font-medium mb-10 text-lg md:text-xl tracking-tight max-w-md leading-relaxed">
+                        <p className="text-white/60 font-bold tracking-tighter mb-10 text-lg md:text-xl max-w-md leading-relaxed">
                             Privacy-aware, personalized stock analysis and contextual financial education without
                             linking your brokerage accounts.
                         </p>
@@ -134,27 +408,39 @@ export default function Landing() {
                         <div className="flex flex-col gap-6">
                             <div className="flex items-center gap-4">
                                 <motion.button
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
+                                    whileHover={{ scale: 1.03 }}
+                                    whileTap={{ scale: 0.96 }}
+                                    animate={{
+                                        boxShadow: [
+                                            '0 0 30px rgba(255,255,255,0.15)',
+                                            '0 0 42px rgba(255,255,255,0.22)',
+                                            '0 0 30px rgba(255,255,255,0.15)',
+                                        ],
+                                    }}
+                                    transition={{
+                                        scale: springPress,
+                                        boxShadow: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
+                                    }}
                                     onClick={() => navigate('/onboarding')}
-                                    className="px-8 py-4 rounded-xl bg-white text-black font-bold tracking-tight flex items-center gap-3 hover:bg-gray-100 transition-colors shadow-[0_0_30px_rgba(255,255,255,0.1)]"
+                                    className="px-8 py-4 rounded-[1.25rem] bg-white text-black font-bold tracking-tighter flex items-center gap-3 hover:bg-gray-100 transition-colors"
                                 >
                                     Deploy Engine
                                     <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
                                 </motion.button>
 
                                 <motion.button
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
-                                    className="px-8 py-4 rounded-xl bg-transparent border border-white/10 text-white font-bold tracking-tight hover:bg-white/5 transition-colors backdrop-blur-md"
+                                    whileHover={{ scale: 1.03 }}
+                                    whileTap={{ scale: 0.96 }}
+                                    transition={springPress}
+                                    className="px-8 py-4 rounded-[1.25rem] text-white font-bold tracking-tighter transition-colors"
+                                    style={glass.pill}
                                 >
                                     Explore Methodology
                                 </motion.button>
                             </div>
 
-                            {/* Upgraded Seamless AI Badge */}
-                            <div className="flex items-center gap-2 text-[11px] font-bold tracking-widest uppercase text-white/40 mt-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <div className="flex items-center gap-2 text-[12px] font-bold tracking-tighter uppercase text-white/50 mt-2">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
                                 <span>Quantitative Execution • Zero Hallucination</span>
                             </div>
                         </div>
@@ -170,245 +456,243 @@ export default function Landing() {
                             style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
                             className="relative w-full max-w-[520px]"
                         >
-                            <div className="glass-panel p-8 rounded-3xl border-t border-t-white/20 shadow-[0_40px_80px_-20px_rgba(0,0,0,1)]">
+                            <div
+                                className="relative overflow-hidden p-8 rounded-[2.5rem]"
+                                style={glass.base}
+                            >
+                                <div className="relative z-10">
 
-                                {/* Header */}
-                                <div className="flex justify-between items-center mb-8">
-                                    <div className="flex items-center gap-2 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
-                                        <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-                                        {/* Synchronized Font */}
-                                        <span className="text-[10px] font-bold tracking-tighter text-white uppercase">
-                                            Live Analysis
-                                        </span>
-                                    </div>
-                                    <span className="text-xs font-mono text-white/40 tabular-nums">15 Apr 2026</span>
-                                </div>
-
-                                {/* Stock Info */}
-                                <div className="flex justify-between items-start mb-8">
-                                    <div>
-                                        <div className="flex items-center gap-3 mb-1">
-                                            {/* Synchronized Font */}
-                                            <h3 className="text-4xl font-bold tracking-tighter text-white">
-                                                RELIANCE
-                                            </h3>
-                                            <span className="text-sm font-mono text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-2 py-0.5 rounded font-medium">
-                                                +2.34%
+                                    <div className="flex justify-between items-center mb-8">
+                                        <div
+                                            className="flex items-center gap-2 px-3 py-1.5 rounded-full"
+                                            style={glass.pill}
+                                        >
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                                            <span className="text-[11px] font-bold tracking-tighter text-white uppercase">
+                                                Live Analysis
                                             </span>
                                         </div>
-                                        {/* Synchronized Font */}
-                                        <p className="text-sm text-white/50 font-medium tracking-tight">
-                                            Reliance Industries Ltd • NSE
+                                        <span className="text-xs font-bold tracking-tighter text-white/40 tabular-nums">
+                                            15 Apr 2026
+                                        </span>
+                                    </div>
+
+                                    <div className="flex justify-between items-start mb-8">
+                                        <div>
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <h3 className="text-4xl font-bold tracking-tighter text-white">
+                                                    RELIANCE
+                                                </h3>
+                                                <span
+                                                    className="text-sm text-emerald-400 px-2 py-0.5 rounded-[0.5rem] font-bold tracking-tighter border border-emerald-400/15"
+                                                    style={{ background: 'rgba(16,185,129,0.06)', backdropFilter: 'blur(12px)' }}
+                                                >
+                                                    +2.34%
+                                                </span>
+                                            </div>
+                                            <p className="text-sm text-white/50 font-bold tracking-tighter">
+                                                Reliance Industries Ltd • NSE
+                                            </p>
+                                        </div>
+
+                                        <div
+                                            className="flex flex-col items-center justify-center px-5 py-3 rounded-[1.25rem]"
+                                            style={glass.nested}
+                                        >
+                                            <span className="font-bold tracking-tighter text-2xl text-white tabular-nums leading-none">
+                                                7.8
+                                            </span>
+                                            <span className="text-[9px] font-bold tracking-[0.15em] text-emerald-400 uppercase mt-1">
+                                                Score
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        className="mb-8 rounded-[1.5rem] p-6"
+                                        style={glass.nested}
+                                    >
+                                        <div className="flex justify-between text-[12px] font-bold tracking-tighter text-white/40 mb-4 uppercase">
+                                            <span>Price Action • 6M</span>
+                                            <span className="tabular-nums text-white/70">₹2,847.50</span>
+                                        </div>
+                                        <div className="h-24 w-full relative">
+                                            <svg
+                                                viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                                                className="w-full h-full overflow-visible"
+                                                preserveAspectRatio="none"
+                                            >
+                                                <defs>
+                                                    <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                                                        <stop offset="0%" stopColor="#0D9488" />
+                                                        <stop offset="100%" stopColor="#10B981" />
+                                                    </linearGradient>
+                                                    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="0%" stopColor="#10B981" stopOpacity="0.20" />
+                                                        <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
+                                                    </linearGradient>
+                                                </defs>
+
+                                                {/* faint reference lines — just enough to read the
+                                                    series against, not a data grid */}
+                                                {[0.25, 0.5, 0.75].map((f) => (
+                                                    <line
+                                                        key={f}
+                                                        x1="0"
+                                                        x2={CHART_W}
+                                                        y1={CHART_H * f}
+                                                        y2={CHART_H * f}
+                                                        stroke="rgba(255,255,255,0.05)"
+                                                        strokeWidth="1"
+                                                    />
+                                                ))}
+
+                                                <motion.path
+                                                    d={PRICE_CHART.area}
+                                                    fill="url(#areaGrad)"
+                                                    initial={{ opacity: 0 }}
+                                                    animate={{ opacity: 1 }}
+                                                    transition={{ duration: 1, delay: 1.7 }}
+                                                />
+
+                                                <motion.path
+                                                    d={PRICE_CHART.line}
+                                                    fill="none"
+                                                    stroke="url(#lineGrad)"
+                                                    strokeWidth="2.5"
+                                                    strokeLinecap="round"
+                                                    initial={{ pathLength: 0 }}
+                                                    animate={{ pathLength: 1 }}
+                                                    transition={{ duration: 2, ease: "easeInOut", delay: 0.5 }}
+                                                    className="drop-shadow-[0_4px_12px_rgba(16,185,129,0.3)]"
+                                                />
+                                            </svg>
+
+                                            <motion.div
+                                                initial={{ opacity: 0, scale: 0 }}
+                                                animate={{ opacity: 1, scale: 1 }}
+                                                transition={{ delay: 2.3 }}
+                                                style={{
+                                                    left: `${(PRICE_CHART.last.x / CHART_W) * 100}%`,
+                                                    top: `${(PRICE_CHART.last.y / CHART_H) * 100}%`,
+                                                }}
+                                                className="absolute -translate-y-1/2 -translate-x-1/2"
+                                            >
+                                                <div className="relative flex items-center justify-center">
+                                                    <motion.div
+                                                        animate={{ scale: [1, 2.5, 1], opacity: [0.8, 0, 0.8] }}
+                                                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                                                        className="absolute w-4 h-4 rounded-full bg-emerald-400 blur-[2px]"
+                                                    />
+                                                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 relative z-10 shadow-[0_0_10px_rgba(16,185,129,1)]" />
+                                                </div>
+                                            </motion.div>
+                                        </div>
+
+                                        <div className="flex justify-between mt-3">
+                                            {CHART_MONTH_LABELS.map((m) => (
+                                                <span
+                                                    key={m}
+                                                    className="text-[9px] font-bold tracking-[0.1em] text-white/25 uppercase"
+                                                >
+                                                    {m}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        className="rounded-[1.5rem] p-6 relative overflow-hidden"
+                                        style={{ ...glass.nested, transform: "translateZ(30px)" }}
+                                    >
+                                        <div className="absolute top-0 left-8 right-8 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
+                                        <p className="text-[10px] font-bold tracking-[0.18em] text-emerald-400 uppercase mb-2.5">
+                                            System Verdict
+                                        </p>
+                                        <p className="text-sm text-white/75 font-bold tracking-tighter leading-relaxed">
+                                            Strong P/E ratio indicates deep undervaluation. Momentum setup perfectly aligns
+                                            with your stated wealth growth profile.
                                         </p>
                                     </div>
-                                    <div className="w-16 h-16 rounded-full border-2 border-emerald-500/20 flex items-center justify-center relative bg-obsidian-900/50 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
-                                        <svg className="absolute inset-0 w-full h-full -rotate-90">
-                                            <circle
-                                                cx="30"
-                                                cy="30"
-                                                r="30"
-                                                fill="none"
-                                                stroke="#10B981"
-                                                strokeWidth="2.5"
-                                                strokeDasharray="188"
-                                                strokeDashoffset="40"
-                                            />
-                                        </svg>
-                                        <span className="font-bold tracking-tighter text-xl text-white">7.8</span>
-                                    </div>
+
                                 </div>
-
-                                {/* Animated Chart */}
-                                <div className="mb-8">
-                                    <div className="flex justify-between text-[11px] font-bold tracking-tighter text-white/40 mb-3 uppercase">
-                                        <span>Price Action • 6M</span>
-                                        <span className="font-mono tracking-normal text-white/70">₹2,847.50</span>
-                                    </div>
-                                    <div className="h-32 w-full relative">
-                                        <svg
-                                            viewBox="0 0 400 100"
-                                            className="w-full h-full overflow-visible preserve-3d"
-                                            preserveAspectRatio="none"
-                                        >
-                                            <defs>
-                                                <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-                                                    <stop offset="0%" stopColor="#0D9488" />
-                                                    <stop offset="100%" stopColor="#10B981" />
-                                                </linearGradient>
-                                            </defs>
-                                            {/* Animated Line Drawing */}
-                                            <motion.path
-                                                d="M0,80 Q50,70 100,85 T200,50 T300,30 T400,20"
-                                                fill="none"
-                                                stroke="url(#lineGrad)"
-                                                strokeWidth="3.5"
-                                                strokeLinecap="round"
-                                                initial={{ pathLength: 0 }}
-                                                animate={{ pathLength: 1 }}
-                                                transition={{ duration: 2, ease: "easeInOut", delay: 0.5 }}
-                                            />
-                                        </svg>
-
-                                        {/* Live Pulsing Market Dot */}
-                                        <motion.div
-                                            initial={{ opacity: 0, scale: 0 }}
-                                            animate={{ opacity: 1, scale: 1 }}
-                                            transition={{ delay: 2.3 }}
-                                            className="absolute right-[0%] top-[12%] flex items-center gap-2 -translate-y-1/2 translate-x-1/2"
-                                        >
-                                            <div className="relative flex items-center justify-center">
-                                                <motion.div
-                                                    animate={{ scale: [1, 2.5, 1], opacity: [0.8, 0, 0.8] }}
-                                                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                                                    className="absolute w-4 h-4 rounded-full bg-emerald-400"
-                                                />
-                                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 relative z-10 shadow-[0_0_10px_rgba(16,185,129,1)]" />
-                                            </div>
-                                        </motion.div>
-                                    </div>
-                                </div>
-
-                                {/* Integrated Text Verdict */}
-                                <div
-                                    className="mt-6 pl-5 border-l-2 border-emerald-500/50 relative"
-                                    style={{ transform: "translateZ(30px)" }}
-                                >
-                                    <div className="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]" />
-                                    {/* Synchronized Font */}
-                                    <h4 className="text-[11px] font-bold text-emerald-400 tracking-tighter uppercase mb-2">
-                                        System Verdict
-                                    </h4>
-                                    {/* Synchronized Font */}
-                                    <p className="text-sm text-white/70 font-medium tracking-tight leading-relaxed">
-                                        Strong P/E ratio indicates deep undervaluation. Momentum setup perfectly aligns
-                                        with your stated wealth growth profile.
-                                    </p>
-                                </div>
-
                             </div>
                         </motion.div>
                     </div>
-                </div>
+                </motion.div>
             </section>
 
             {/* =========================================
-                SECTION 2: EDITORIAL BENTO GRID (Scrollable)
-            ============================================= */}
-            <section className="relative z-10 w-full min-h-screen py-32 flex flex-col items-center justify-center border-t border-white/5 bg-gradient-to-b from-transparent to-[#030508]">
-                <div className="max-w-7xl mx-auto px-8 md:px-16 w-full">
+          SECTION 2: THE LINEAGE JOURNEY
+          Numbered phases are a real ordered sequence
+          here (Discovery → Interrogation → Execution),
+          so the 01/02/03 device is earned, not decorative.
+          Each card now carries the number as a giant
+          watermark typographic element rather than a
+          small icon-in-a-box badge.
+      ============================================= */}
+            <section
+                ref={narrativeRef}
+                className="relative z-10 w-full py-32 flex flex-col items-center bg-transparent"
+            >
+                <div className="text-center mb-32 relative z-20">
+                    <h2 className="text-5xl md:text-7xl font-bold tracking-tighter text-white mb-6 leading-[1.05]">
+                        Precision engineering.<br />
+                        <span className="text-white/40">Zero speculation.</span>
+                    </h2>
+                    <p className="text-white/50 text-xl max-w-2xl mx-auto font-bold tracking-tighter">
+                        The anatomy of a definitive trade. Follow the engine's deterministic lifecycle from raw
+                        data ingestion to absolute conviction.
+                    </p>
+                </div>
 
+                <div className="relative w-full max-w-5xl mx-auto px-8 md:px-16 flex flex-col gap-32 pb-32">
+
+                    <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[1px] bg-white/[0.04] -z-10" />
                     <motion.div
-                        initial={{ opacity: 0, y: 30 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true, margin: "-100px" }}
-                        className="mb-20"
-                    >
-                        <h2 className="text-5xl md:text-7xl font-bold tracking-tighter text-white mb-6 leading-[1.05]">
-                            Precision engineering.<br />
-                            <span className="text-white/40">Zero speculation.</span>
-                        </h2>
-                    </motion.div>
+                        style={{ top: orbY, scale: orbScale }}
+                        className="absolute left-1/2 -translate-x-1/2 w-[300px] h-[300px] bg-emerald-500/20 rounded-full blur-[100px] -z-10 pointer-events-none"
+                    />
 
-                    {/* Bento Grid Architecture (No Generic Alternating Blocks) */}
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-
-                        {/* BLOCK 1: Institutional Math (Wide) */}
+                    {phases.map((phase) => (
                         <motion.div
-                            initial={{ opacity: 0, y: 20 }}
+                            key={phase.num}
+                            initial={{ opacity: 0, y: 50 }}
                             whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true, margin: "-50px" }}
-                            className="col-span-1 md:col-span-8 glass-panel p-10 md:p-12 rounded-3xl border-t border-white/10 relative overflow-hidden group"
+                            viewport={{ once: true, margin: "-100px" }}
+                            className={`relative w-full md:w-[85%] ${phase.align}`}
                         >
-                            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-emerald-500/5 rounded-full blur-[100px] -mr-40 -mt-40 transition-opacity" />
+                            <div className={phase.edgeClass} />
+                            <div
+                                className="p-10 md:p-14 rounded-[2.5rem] relative overflow-hidden"
+                                style={glass.base}
+                            >
+                                {/* Giant typographic numeral — replaces the
+                                    generic icon-in-a-box badge entirely */}
+                                <span
+                                    aria-hidden="true"
+                                    className="absolute -top-6 -left-3 text-[9rem] md:text-[11rem] font-bold leading-none text-white/[0.045] select-none pointer-events-none tracking-tighter"
+                                >
+                                    {phase.num}
+                                </span>
 
-                            <h3 className="text-4xl md:text-5xl font-bold text-white mb-6 tracking-tighter">Institutional Math.</h3>
-                            <p className="text-white/50 text-lg leading-relaxed max-w-xl font-medium tracking-tight">
-                                Our system computes millions of data points across price action, fundamentals, and relative strength to deliver definitive trade setups. The exact quantitative edge used by top-tier funds.
-                            </p>
-
-                            {/* Programmatic Data Matrix Visual (No Generic Icons) */}
-                            <div className="mt-12 h-32 w-full border-t border-white/10 pt-6 flex items-end gap-1.5 opacity-50">
-                                {[...Array(30)].map((_, i) => (
-                                    <motion.div
-                                        key={i}
-                                        initial={{ height: "10%" }}
-                                        animate={{ height: `${20 + Math.random() * 80}%` }}
-                                        transition={{ duration: 1.5 + Math.random() * 2, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-                                        className="flex-1 bg-emerald-500/30 rounded-t-sm"
-                                    />
-                                ))}
-                            </div>
-                        </motion.div>
-
-                        {/* BLOCK 2: Absolute Privacy (Square) */}
-                        <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true, margin: "-50px" }}
-                            transition={{ delay: 0.1 }}
-                            className="col-span-1 md:col-span-4 glass-panel p-10 md:p-12 rounded-3xl border-t border-white/10 relative overflow-hidden"
-                        >
-                            <div className="absolute bottom-0 left-0 w-full h-1/2 bg-teal-500/5 blur-[50px]" />
-
-                            <h3 className="text-4xl font-bold text-white mb-6 tracking-tighter leading-[1.05]">Absolute<br />Privacy.</h3>
-                            <p className="text-white/50 text-lg leading-relaxed font-medium tracking-tight">
-                                Zero broker links. Your portfolio macro allocation stays on your device. We evaluate the market, not your identity.
-                            </p>
-
-                            {/* Cryptographic Hash Visual (No Generic Shields) */}
-                            <div className="mt-10 font-mono text-xs text-teal-500/40 break-all leading-loose opacity-60">
-                                0x9a8f4c2<br />
-                                [LOCAL_ENV_LOCK]<br />
-                                PORTFOLIO_STATE=SECURE<br />
-                                0x11f9a8f
-                            </div>
-                        </motion.div>
-
-                        {/* BLOCK 3: Deterministic Execution (Full Width) */}
-                        <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            whileInView={{ opacity: 1, y: 0 }}
-                            viewport={{ once: true, margin: "-50px" }}
-                            transition={{ delay: 0.2 }}
-                            className="col-span-1 md:col-span-12 glass-panel p-10 md:p-16 rounded-3xl border-t border-white/10 relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-12"
-                        >
-                            <div className="flex-1">
-                                <h3 className="text-4xl md:text-5xl font-bold text-white mb-6 tracking-tighter leading-[1.05]">
-                                    Emotional detachment<br />
-                                    <span className="text-white/40">by design.</span>
-                                </h3>
-                                <p className="text-white/50 text-lg leading-relaxed font-medium tracking-tight max-w-2xl">
-                                    The engine evaluates hard-gates across fundamentals, relative strength, and price action. If a setup fails the math, it is blocked. No exceptions. No hallucinations.
-                                </p>
-                            </div>
-
-                            {/* Structural Logic Visual (No Solar Systems) */}
-                            <div className="flex-1 w-full relative h-full flex flex-col justify-center items-end opacity-80 gap-4">
-                                <div className="w-full max-w-md">
-                                    <div className="flex justify-between text-[10px] font-bold tracking-widest uppercase text-white/40 mb-2">
-                                        <span>Valuation Gate</span>
-                                        <span className="text-emerald-400">Pass</span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                        <motion.div className="h-full bg-emerald-500" initial={{ width: 0 }} whileInView={{ width: "100%" }} transition={{ duration: 1.5, delay: 0.2 }} />
-                                    </div>
-                                </div>
-                                <div className="w-full max-w-md">
-                                    <div className="flex justify-between text-[10px] font-bold tracking-widest uppercase text-white/40 mb-2">
-                                        <span>Momentum Convergence</span>
-                                        <span className="text-emerald-400">Pass</span>
-                                    </div>
-                                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                        <motion.div className="h-full bg-emerald-500" initial={{ width: 0 }} whileInView={{ width: "100%" }} transition={{ duration: 1.5, delay: 0.4 }} />
-                                    </div>
+                                <div className="relative z-10">
+                                    <p className={phase.eyebrowClass}>
+                                        {phase.eyebrow}
+                                    </p>
+                                    <h3 className="text-3xl font-bold text-white tracking-tighter mb-6 max-w-md">
+                                        {phase.title}
+                                    </h3>
+                                    <p className="text-white/55 text-lg leading-relaxed font-bold tracking-tighter max-w-xl">
+                                        {phase.body}
+                                    </p>
                                 </div>
                             </div>
                         </motion.div>
+                    ))}
 
-                    </div>
                 </div>
             </section>
-
         </div>
     );
 }
