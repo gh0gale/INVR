@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-[#0A0D14]/80 backdrop-blur-2xl border border-white/[0.06] shadow-2xl shadow-black/60;
+  }
+
+  .bg-grid {
+    background-size: 60px 60px;
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    mask-image: linear-gradient(to bottom, black 20%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 20%, transparent 100%);
+  }
+
+  .perspective-1000 {
+    perspective: 1000px;
+  }
+
+  /* Finance-focused gradient: Teal -> Emerald -> Light Green */
+  .text-gradient-finance {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-teal-400 via-emerald-400 to-green-300;
+  }
+}
+
+body {
+  @apply bg-[#030508] text-white font-sans overflow-x-hidden m-0 p-0 min-h-screen selection:bg-emerald-500/30;
+}
