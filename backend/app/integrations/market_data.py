@@ -1,7 +1,10 @@
 import asyncio
 import yfinance as yf
 import pandas as pd
+import logging
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 async def fetch_yfinance_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
     """Fetches OHLCV data. Adds .NS for Indian markets. Uses exact-date fallback to prevent yfinance glitches."""
@@ -71,7 +74,7 @@ async def fetch_yfinance_fundamentals(ticker: str) -> dict:
             "sector": info.get("sector", "Unknown"),
             "pe": info.get("trailingPE", 0),
             "pe_ratio": info.get("trailingPE", 0),
-            "sector_pe_median": 25.0, 
+            "sector_pe_median": info.get("sectorPe") or info.get("industryPe") or 25.0, 
             "debt_to_equity": info.get("debtToEquity", 0) if info.get("debtToEquity") else 0,
             "roe": (info.get("returnOnEquity", 0) * 100) if info.get("returnOnEquity") else 0,
             "dividend_yield": info.get("dividendYield", 0),
@@ -120,11 +123,22 @@ async def fetch_yfinance_fundamentals(ticker: str) -> dict:
                 debt = bs.loc["Total Debt"].dropna().tolist()[::-1] if "Total Debt" in bs.index else []
                 funds["balance_sheet_5y"] = {
                     "total_debt": debt[-5:] if len(debt) >= 5 else debt,
-                    "book_value_per_share": [100, 110, 125, 140, 160] # Mocked placeholder BVPS for stability; historical shares not reliably available via yfinance free API
                 }
                 
+                equity_row_key = "Stockholders Equity" if "Stockholders Equity" in bs.index else (
+                    "Total Stockholder Equity" if "Total Stockholder Equity" in bs.index else None
+                )
+                if equity_row_key:
+                    equity = bs.loc[equity_row_key].dropna().tolist()[::-1]
+                    shares = info.get("sharesOutstanding") or info.get("impliedSharesOutstanding") or 1
+                    bvps = [round(e / shares, 2) for e in equity[-5:]] if shares > 0 else []
+                else:
+                    bvps = []
+                
+                funds["balance_sheet_5y"]["book_value_per_share"] = bvps if bvps else []
+                
         except Exception as e:
-            print(f"  [⚠️] Warning: Could not parse deep financials for {ticker} ({e})")
+            logger.warning("Could not parse deep financials for %s (%s)", ticker, e)
             
         return funds
         

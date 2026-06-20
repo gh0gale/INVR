@@ -1,22 +1,29 @@
 import json
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.schemas.tutor import ChatRequest
 from app.pipeline.tutor_graph import build_tutor_graph
 from app.services.memory_service import manage_session_memory
 
 router = APIRouter(tags=["Tutor System"])
+limiter = Limiter(key_func=get_remote_address)
 tutor_graph = build_tutor_graph()
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
+@limiter.limit("10/minute")
+async def chat_stream(request: Request, request_data: ChatRequest, background_tasks: BackgroundTasks):
     
     initial_state = {
-        "messages": [HumanMessage(content=request.message)],
-        "analysis_state": request.analysis_context,
-        "user_profile": request.user_profile,
+        "messages": [HumanMessage(content=request_data.message)],
+        "analysis_state": request_data.analysis_context,
+        "user_profile": request_data.user_profile,
         "routed_mode": "",
         "tool_data": ""
     }
@@ -38,15 +45,15 @@ async def chat_stream(request: ChatRequest, background_tasks: BackgroundTasks):
             
             background_tasks.add_task(
                 manage_session_memory, 
-                request.session_id, 
+                request_data.session_id, 
                 test_user_id,
-                request.message, 
+                request_data.message, 
                 full_ai_response,
                 topic_changed=False 
             )
             
         except Exception as e:
-            print(f"Streaming Error: {str(e)}")
+            logger.error("Streaming Error: %s", str(e))
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

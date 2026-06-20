@@ -9,8 +9,8 @@ from supabase import create_client
 load_dotenv(override=True)
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
-# Grade swing trades after 15 days
-TIMEFRAMES = {"swing": 15}
+# Grade swing trades after 15 days, positional after 90, long-term after 365
+TIMEFRAMES = {"swing": 15, "positional": 90, "long_term": 365}
 
 def grade_trades():
     print("🔍 ORACLE: Grading Matured Predictions against Market Reality...")
@@ -48,8 +48,13 @@ def grade_trades():
                 
                 # Intent Evaluation
                 outcome = "DRAW"
-                target_up = entry_price * 1.05
-                stop_down = entry_price * 0.95
+                trade_setup = row["gold_verdict"].get("trade_setup")
+                if trade_setup:
+                    target_up = trade_setup["target_1"]
+                    stop_down = trade_setup["stop_loss"]
+                else:
+                    target_up = entry_price * 1.05
+                    stop_down = entry_price * 0.95
                 
                 if verdict in ["STRONG BUY", "BUY ON DIP"]:
                     if max_high >= target_up: outcome = "WIN"

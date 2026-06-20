@@ -1,3 +1,5 @@
+import logging
+import json
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -5,6 +7,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 from app.schemas.tutor import TutorState
 from app.tools.market_data import fetch_stock_news
@@ -16,7 +20,7 @@ class RouteDecision(BaseModel):
     )
 
 async def semantic_router_node(state: TutorState) -> TutorState:
-    print("  [Tutor] Classifying user intent...")
+    logger.info("Classifying user intent...")
     # Initialize LLM with zero temperature for deterministic routing
     llm = ChatOllama(model="llama3.1", temperature=0.0)
     structured_llm = llm.with_structured_output(RouteDecision)
@@ -37,7 +41,7 @@ async def semantic_router_node(state: TutorState) -> TutorState:
 
 # --- 2. TOOL EXECUTION NODE (Already Async) ---
 async def news_tool_node(state: TutorState) -> TutorState:
-    print("  [Tutor] Fetching live market news...")
+    logger.info("Fetching live market news...")
     ticker = state["analysis_state"].get("ticker", "RELIANCE.NS")
     news_text = await fetch_stock_news(ticker)
     return {"tool_data": news_text}
@@ -45,7 +49,7 @@ async def news_tool_node(state: TutorState) -> TutorState:
 # --- 3. GENERATION NODE (Fully Optimized Async) ---
 async def generation_node(state: TutorState, config: RunnableConfig) -> TutorState:
     mode = state["routed_mode"]
-    print(f"  [Tutor] Generating response via mode: {mode.upper()}...")
+    logger.info("Generating response via mode: %s", mode.upper())
     
     llm = ChatOllama(model="llama3.1", temperature=0.3) 
     

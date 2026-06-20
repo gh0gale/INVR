@@ -119,6 +119,7 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
             if silver.current_price < silver.sma_200:
                 gates["secular_trend"] = "WARN"
                 watch_list.append(f"Wait for structural recovery above the 200-week SMA (₹{silver.sma_200:.2f}).")
+            else:
                 gates["secular_trend"] = "PASS"
                 
         # Valuation Ceiling

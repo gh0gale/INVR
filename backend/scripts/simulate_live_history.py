@@ -11,7 +11,8 @@ from supabase import create_client
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.schemas.bronze import BronzePayload
-from app.services.silver_service import compute_silver_metrics # YOUR EXACT FUNCTION
+from app.services.silver_service import compute_silver_metrics 
+from app.services.gold_service import evaluate_hard_gates
 from config.gate_thresholds import GATE_THRESHOLDS as TH
 
 load_dotenv(override=True)
@@ -52,17 +53,13 @@ def run_simulation():
                 continue
                 
             # 3. Evaluate against YOUR exact Hard Gates
-            rsi = getattr(silver, "rsi_14", 50)
-            vol = getattr(silver, "current_volume", 0)
-            avg_vol = getattr(silver, "volume_avg_20", 1)
-            vol_ratio = vol / avg_vol if avg_vol else 0
-            
-            # GATE LOGIC
-            passed_rsi = TH["rsi_oversold"] < rsi < TH["rsi_overbought"]
-            passed_vol = vol_ratio > TH["volume_min_ratio"]
-            
+            try:
+                gold = evaluate_hard_gates(silver, "none", 100000.0)
+            except Exception:
+                continue
+                
             # Only proceed if the trade survives your production gates
-            if passed_rsi and passed_vol:
+            if gold.verdict in ["STRONG BUY", "BUY ON DIP"]:
                 
                 # 4. The Oracle: What happened in reality 15 days later?
                 future_slice = df.iloc[i+1 : i+1+LOOKAHEAD_DAYS]
@@ -82,7 +79,7 @@ def run_simulation():
                         "date": simulated_date,
                         "pipeline_version": "v1.0.0",
                         "silver_state": silver.model_dump() if hasattr(silver, 'model_dump') else silver.__dict__,
-                        "gold_verdict": {"verdict": "BUY ON DIP"},
+                        "gold_verdict": gold.model_dump() if hasattr(gold, 'model_dump') else gold.__dict__,
                         "actual_outcome": outcome,
                         "max_favorable_excursion": max_high,
                         "max_adverse_excursion": min_low

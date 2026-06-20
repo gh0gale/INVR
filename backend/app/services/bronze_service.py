@@ -82,10 +82,9 @@ async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
 
     inst_activity = None
     if manifest["needs_institutional"]:
-        inst_activity = {
-            "fii_net_activity": 125.5,
-            "dii_net_activity": -40.2
-        }
+        # TODO: [PRODUCTION] Integrate real FII/DII data from NSE bulk deals API or NSDL/CDSL.
+        # Until then, return None to avoid fake bias signals.
+        inst_activity = None
 
     return BronzePayload(
         ticker=ticker,

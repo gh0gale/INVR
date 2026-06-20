@@ -1,7 +1,10 @@
+import logging
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 # --- 1. THE UNIFIED SCHEMA (Highly Token Efficient) ---
 class MemoryUpdate(BaseModel):
@@ -19,7 +22,7 @@ class MemoryUpdate(BaseModel):
 
 # --- 2. THE EXTRACTION NODE ---
 async def extract_memory_chunk(chat_chunk: str, current_semantic_profile: Dict[str, Any]) -> Dict[str, Any]:
-    print("  [Memory] Running background extraction (Unified Pass)...")
+    logger.info("Running background extraction (Unified Pass)...")
     
     # We use a lower temp (0.0) for strict data extraction
     llm = ChatOllama(model="llama3.1", temperature=0.0)

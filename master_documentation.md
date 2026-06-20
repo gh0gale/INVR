@@ -24,12 +24,14 @@
 16. [Caching Layer](#16-caching-layer)
 17. [FastAPI Application & API Routes](#17-fastapi-application--api-routes)
 18. [Authentication & Security](#18-authentication--security)
-19. [Timeframe-Specific Data & Indicator Matrix](#19-timeframe-specific-data--indicator-matrix)
-20. [End-to-End Request Lifecycle](#20-end-to-end-request-lifecycle)
-21. [Testing](#21-testing)
-22. [Implementation Tracker](#22-implementation-tracker)
-23. [Known Issues & Audit Findings](#23-known-issues--audit-findings)
-24. [Roadmap & Planned Features](#24-roadmap--planned-features)
+19. [Quantitative Engine Room (Stage 10)](#19-quantitative-engine-room-stage-10)
+20. [CI/CD — GitHub Actions](#20-cicd--github-actions)
+21. [Timeframe-Specific Data & Indicator Matrix](#21-timeframe-specific-data--indicator-matrix)
+22. [End-to-End Request Lifecycle](#22-end-to-end-request-lifecycle)
+23. [Testing](#23-testing)
+24. [Implementation Tracker](#24-implementation-tracker)
+25. [Known Issues & Audit Findings](#25-known-issues--audit-findings)
+26. [Roadmap & Planned Features](#26-roadmap--planned-features)
 
 ---
 
@@ -76,6 +78,7 @@ Confidence scores are strictly computed via weighted mathematical signal compone
 | NSE Data | nsepython | ≥2.97 |
 | Environment Variables | python-dotenv | ≥1.2.2 |
 | Package Manager | uv | (lock file present) |
+| CI/CD | GitHub Actions | `engine_room.yml` |
 
 ### Declared but Unused
 
@@ -96,8 +99,11 @@ Confidence scores are strictly computed via weighted mathematical signal compone
 ```
 INVR/
 ├── .git/
+├── .github/
+│   └── workflows/
+│       └── engine_room.yml          # Scheduled CI: nightly grading + weekly drift analysis
 ├── .gitignore
-├── audit_report.md                  # Full system audit (674 lines)
+├── audit_report.md                  # Full system audit
 ├── idea.md                          # Blueprint: Bronze/Silver metrics per timeframe
 ├── master_documentation.md          # THIS FILE
 ├── system_evaluation_prompt.md      # 9-phase audit prompt template
@@ -116,6 +122,11 @@ INVR/
 │   ├── config/
 │   │   ├── __init__.py
 │   │   └── gate_thresholds.py       # Externalized numeric thresholds
+│   │
+│   ├── scripts/
+│   │   ├── grade_ledger.py          # Midnight Grader: grades matured predictions against reality
+│   │   ├── analyze_drift.py         # Statistical Drift Analyzer: detects threshold miscalibration
+│   │   └── simulate_live_history.py # Time Machine: backfills 2y of graded production logs
 │   │
 │   └── app/
 │       ├── __init__.py
@@ -232,7 +243,7 @@ Stores validated user profiles. Upserted via admin client (bypasses RLS).
 | `semantic_profile` | `jsonb` | Accumulated learning state from memory system |
 
 #### `algorithmic_ledger`
-Stores every prediction for backtesting. One row per ticker × timeframe × date × pipeline_version.
+Stores every prediction for backtesting and grading. One row per ticker × timeframe × date × pipeline_version.
 
 | Column | Type | Description |
 |---|---|---|
@@ -243,6 +254,9 @@ Stores every prediction for backtesting. One row per ticker × timeframe × date
 | `pipeline_version` | `text` | e.g., `v1.0.0` |
 | `silver_state` | `jsonb` | Full SilverMetrics snapshot |
 | `gold_verdict` | `jsonb` | Full VerdictDraft snapshot |
+| `actual_outcome` | `text` | `PENDING` / `WIN` / `LOSS` / `DRAW` — graded by `grade_ledger.py` |
+| `max_favorable_excursion` | `float8` | Highest price reached in the evaluation window |
+| `max_adverse_excursion` | `float8` | Lowest price reached in the evaluation window |
 | `created_at` | `timestamptz` | Auto-set |
 
 #### `prediction_interactions`
@@ -265,6 +279,20 @@ Persists tutor conversation state for each session.
 | `user_id` | `uuid` (FK → `user_profiles`) | Owner |
 | `working_memory` | `jsonb` | Array of `{role, content}` message pairs (sliding window) |
 | `episodic_memory` | `jsonb` | Array of summarized conversation chunks |
+| `created_at` | `timestamptz` | Auto-set |
+
+#### `threshold_insights`
+Stores automated suggestions from the Drift Analyzer for threshold recalibration.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `uuid` (PK) | Auto-generated |
+| `metric` | `text` | Gate threshold key (e.g., `rsi_overbought`, `volume_min_ratio`) |
+| `timeframe` | `text` | Applicable timeframe |
+| `current_threshold` | `float8` | Current configured threshold value |
+| `suggested_threshold` | `float8` | Data-driven suggested threshold value |
+| `confidence_score` | `float8` | Statistical confidence of the suggestion |
+| `reasoning` | `text` | Human-readable explanation of the drift detection |
 | `created_at` | `timestamptz` | Auto-set |
 
 ---
@@ -318,6 +346,7 @@ A union schema that accommodates all timeframes. Fields are `Optional` — only 
 | **Swing Fundamentals** | `pe_vs_sector_avg`, `trailing_pe`, `debt_flag`, `institutional_bias` | Swing |
 | **Positional Fundamentals** | `revenue_cagr_3y`, `profit_cagr_3y`, `opm_trend`, `roe_vs_cost_of_capital`, `valuation_comfort` | Positional |
 | **Long-Term Compounder** | `revenue_cagr_5y`, `eps_cagr_5y`, `fcf_conversion`, `roe_consistency_5y`, `debt_trajectory`, `pe_band_vs_growth` | Long-Term |
+| **Schema-Only (Unpopulated)** | `cfo_vs_net_profit`, `promoter_holding_trend`, `book_value_growth`, `promoter_conviction_trend`, `dividend_consistency` | Reserved for v2 |
 
 ### VerdictDraft (`schemas/gold.py`)
 
@@ -496,6 +525,15 @@ Fetches multi-year financial statements and assembles a polymorphic dict:
 | `stock.cashflow` | Operating Cash Flow (3y/5y), Capital Expenditure (3y/5y, abs-converted) |
 | `stock.balance_sheet` | Total Debt (5y) |
 
+**Nested `ratios` sub-dictionary** is now populated:
+```python
+"ratios": {
+    "pe": info.get("trailingPE", 0),
+    "roe_5y": [],          # Empty placeholder (5Y ROE history unavailable via yfinance free tier)
+    "debt_to_equity_trend": []  # Empty placeholder
+}
+```
+
 **Known mock data:** `sector_pe_median` hardcoded to `25.0`, `book_value_per_share` hardcoded to `[100, 110, 125, 140, 160]`.
 
 ---
@@ -539,7 +577,7 @@ def calculate_cagr(history_list: list) -> Optional[float]:
 | Metric | Source | Logic |
 |---|---|---|
 | `pe_vs_sector_avg` | `trailingPE - sector_pe_median` | Valuation relative to sector |
-| `debt_flag` | `debtToEquity > 1.5×100` | Boolean high-debt warning |
+| `debt_flag` | `de > (TH["debt_equity_max"] * 100)` OR `(0 < de < 10 AND de > TH["debt_equity_max"])` | Dual-check: handles both percentage and ratio format from yfinance |
 | `institutional_bias` | `fii_net + dii_net` | `>50` → "buyer", `<-50` → "seller", else "neutral" |
 
 #### Positional
@@ -557,7 +595,7 @@ def calculate_cagr(history_list: list) -> Optional[float]:
 | `revenue_cagr_5y` | `calculate_cagr(income_statement_5y.revenue)` × 100 | % CAGR |
 | `eps_cagr_5y` | `calculate_cagr(income_statement_5y.eps)` × 100 | % CAGR |
 | `fcf_conversion` | `Σ(CFO - Capex) / Σ(Net Profit)` over 5y | Ratio (healthy > 0.6) |
-| `roe_consistency_5y` | `min(roe_5y[]) > 18.0` | `"consistent_moat"` / `"average"` / `"volatile"` |
+| `roe_consistency_5y` | `min(roe_5y[]) > 18.0` → `"consistent_moat"`, fallback to single ROE check | `"consistent_moat"` / `"average"` / `"volatile"` |
 | `debt_trajectory` | `debt_5y[-1] < debt_5y[0]` | `"deleveraging"` / `"leveraging"` / `"stable"` |
 | `pe_band_vs_growth` | `PE / eps_cagr_5y` | PEG-like ratio |
 
@@ -621,6 +659,15 @@ elif failed_count == 1       → MONITOR
 elif all gates PASS          → STRONG BUY
 else                         → BUY ON DIP
 ```
+
+### Dynamic Parameter-Based Primary Reason
+
+The `primary_reason` field is dynamically generated based on gate results:
+- **AVOID:** "Execution blocked due to Circuit Limits."
+- **CAUTION:** Lists the specific failing/warning gates by human-readable name.
+- **MONITOR:** Identifies the single lagging gate parameter.
+- **STRONG BUY:** Lists the top 3 passing gates as strengths.
+- **BUY ON DIP:** "Mixed technical signals, but supported by overall structural floors."
 
 ### Post-Verdict Overrides (Applied Sequentially)
 
@@ -758,6 +805,8 @@ Runs as a FastAPI `BackgroundTask` (fire-and-forget) after the analytics respons
 
 **Pipeline Version:** `v1.0.0` — must be incremented whenever gate thresholds change.
 
+**Note:** `ledger_service.py` creates its own Supabase client instance using `os.getenv()` + `create_client()` rather than importing from `database.py`. This is intentional for background task isolation but diverges from the centralized client pattern.
+
 ---
 
 ## 14. The Tutor System (Stage 9)
@@ -816,7 +865,7 @@ async def fetch_stock_news(ticker: str) -> str:
 
 ### Session Memory (`services/memory_service.py`)
 
-Manages chat persistence with a chunked eviction strategy.
+Manages chat persistence with a chunked eviction strategy. Uses the centralized `supabase_admin` client from `database.py`.
 
 **Flow:**
 1. **Fetch or create** session from `chat_sessions` table.
@@ -853,7 +902,7 @@ File-based caching using JSON serialization. Designed as a local-dev replacement
 ### Implementation
 
 - **Storage:** `backend/.local_cache/` directory.
-- **Key format:** `type:ticker:period:interval` → sanitized to valid filename.
+- **Key format:** `type:ticker:period:interval` → sanitized to valid filename (`:` → `_`, `^` removed).
 - **Expiry:** TTL-based using filesystem `mtime`. Checked on read.
 - **I/O:** All filesystem operations wrapped in `asyncio.to_thread()` to avoid blocking the event loop.
 
@@ -968,7 +1017,100 @@ Uses Supabase GoTrue JWT verification via the anon client. Returns the authentic
 
 ---
 
-## 19. Timeframe-Specific Data & Indicator Matrix
+## 19. Quantitative Engine Room (Stage 10)
+
+**Directory:** `backend/scripts/`
+
+A suite of offline scripts that operate on the `algorithmic_ledger` to create a self-improving feedback loop. These scripts run as scheduled CI/CD jobs and can also be triggered manually.
+
+### 19.1 Midnight Grader (`scripts/grade_ledger.py`)
+
+**Purpose:** Grades matured predictions against actual market reality.
+
+**Execution:** Runs nightly at 23:00 UTC via GitHub Actions.
+
+**Logic:**
+1. Queries `algorithmic_ledger` for rows where `actual_outcome == "PENDING"` and the prediction date is older than the evaluation horizon.
+2. For each pending prediction:
+   - Fetches the actual price history for the evaluation window after the prediction date.
+   - Calculates `max_favorable_excursion` (highest High) and `max_adverse_excursion` (lowest Low).
+   - Evaluates **intent-based grading**:
+     - For bullish verdicts (`STRONG BUY`, `BUY ON DIP`): WIN if `max_high >= entry × 1.05`, LOSS if `min_low <= entry × 0.95`.
+     - For bearish verdicts (`CAUTION`, `AVOID`): WIN if `min_low <= entry × 0.95`, LOSS if `max_high >= entry × 1.05`.
+     - Otherwise: DRAW.
+3. Updates the ledger row with the graded outcome and excursion values.
+
+**Evaluation Horizons:**
+
+| Timeframe | Days to Wait |
+|---|---|
+| `swing` | 15 |
+
+**Rate Limiting:** 0.5s sleep between yfinance API calls to avoid throttling.
+
+### 19.2 Statistical Drift Analyzer (`scripts/analyze_drift.py`)
+
+**Purpose:** Detects when the system's configured gate thresholds have drifted from what the data empirically shows works.
+
+**Execution:** Runs weekly (Sundays at 06:00 UTC) via GitHub Actions.
+
+**Logic:**
+1. Fetches all graded (non-PENDING, non-DRAW) ledger rows.
+2. Requires a minimum of 30 graded rows for statistical significance.
+3. Separates data into WIN and LOSS cohorts.
+4. Runs drift checks against `config/gate_thresholds.py`:
+
+**Drift Check 1 — RSI Overbought Ceiling:**
+- Calculates the P90 RSI of winning trades.
+- If `P90_win_rsi < (current_rsi_gate - 3.0)`: fires an insight suggesting the overbought ceiling is too lenient.
+
+**Drift Check 2 — Volume Minimum Ratio:**
+- Calculates the median volume ratio of winning trades.
+- If `median_win_vol > (current_vol_gate + 0.4)`: fires an insight suggesting the volume floor is too low.
+
+5. Logs insights to the `threshold_insights` table with current threshold, suggested threshold, confidence score, and reasoning.
+
+### 19.3 Time Machine Simulator (`scripts/simulate_live_history.py`)
+
+**Purpose:** Backfills the `algorithmic_ledger` with 2 years of historically-graded predictions to bootstrap the drift analysis engine.
+
+**Execution:** Manual one-time run.
+
+**Logic:**
+1. Downloads 2 years of daily OHLCV for 5 blue-chip tickers: `RELIANCE.NS`, `HDFCBANK.NS`, `TCS.NS`, `INFY.NS`, `ICICIBANK.NS`.
+2. Walk-forward simulation starting at day 200 (to allow SMAs to warm up):
+   - Builds a `BronzePayload` from the historical slice up to each date.
+   - Runs the **actual `compute_silver_metrics()` function** on the slice.
+   - Evaluates basic gates (RSI, volume ratio) against production thresholds.
+   - If gates pass: looks ahead 15 days to determine the actual outcome (WIN/LOSS/DRAW).
+   - Only records WIN and LOSS outcomes to avoid noise.
+3. Batch upserts all graded rows to `algorithmic_ledger`.
+
+**Ticker Set:** `["RELIANCE.NS", "HDFCBANK.NS", "TCS.NS", "INFY.NS", "ICICIBANK.NS"]`
+
+---
+
+## 20. CI/CD — GitHub Actions
+
+**File:** `.github/workflows/engine_room.yml`
+
+### Workflow: Quantitative Engine Room Maintenance
+
+| Schedule | Job | Script |
+|---|---|---|
+| `0 23 * * *` (Daily 23:00 UTC) | Midnight Grading | `backend/scripts/grade_ledger.py` |
+| `0 6 * * 0` (Sundays 06:00 UTC) | Statistical Drift Analysis | `backend/scripts/analyze_drift.py` |
+| Manual (`workflow_dispatch`) | Both jobs | Both scripts |
+
+**Environment:** Ubuntu latest, Python 3.12 (not 3.14 — CI uses stable Python for compatibility).
+
+**Secrets Required:** `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (configured in GitHub repo settings).
+
+**Dependencies Installed:** `yfinance pandas numpy supabase python-dotenv` (minimal subset — no Ollama/LangGraph needed for offline scripts).
+
+---
+
+## 21. Timeframe-Specific Data & Indicator Matrix
 
 ### Summary — What Matters by Timeframe
 
@@ -1025,7 +1167,7 @@ Uses Supabase GoTrue JWT verification via the anon client. Returns the authentic
 
 ---
 
-## 20. End-to-End Request Lifecycle
+## 22. End-to-End Request Lifecycle
 
 ### Analytics Pipeline (`POST /api/v1/analytics/process`)
 
@@ -1059,6 +1201,10 @@ LangGraph Pipeline (orchestrator.py)
 Background Task: log_prediction_to_ledger()
     ↓
 Return PipelineResponse to Client
+    ↓
+[Nightly] grade_ledger.py grades matured predictions
+    ↓
+[Weekly] analyze_drift.py detects threshold miscalibration
 ```
 
 ### Tutor Chat (`POST /api/v1/tutor/chat/stream`)
@@ -1083,7 +1229,7 @@ Background Task: manage_session_memory()
 
 ---
 
-## 21. Testing
+## 23. Testing
 
 **File:** `backend/test_pipeline.py`
 
@@ -1127,11 +1273,11 @@ python test_pipeline.py
 
 ---
 
-## 22. Implementation Tracker
+## 24. Implementation Tracker
 
 | Feature / Component | Status | Notes |
 |:---|:---|:---|
-| **Repository Structure** | ✅ Done | Clean separation: api / schemas / services / pipeline / integrations / tools |
+| **Repository Structure** | ✅ Done | Clean separation: api / schemas / services / pipeline / integrations / tools / scripts |
 | **Pipeline Router (Stage 1)** | ✅ Done | 4 timeframes fully configured |
 | **Data Ingestion — Bronze (Stage 2)** | ✅ Done | yfinance OHLCV, fundamentals, sector, circuit status |
 | **Feature Engineering — Silver (Stage 3)** | ✅ Done | SMAs, RSI, ATR, CAGRs, RS, Market Regime, FCF |
@@ -1156,6 +1302,16 @@ python test_pipeline.py
 | **End-to-End Integration Test** | ✅ Done | 14-step user journey covering all features |
 | **`.env.example`** | ✅ Done | Template for 3 required env vars |
 | **`.gitignore`** | ✅ Done | Covers .env, cache, venv, pycache, node_modules |
+| **Midnight Grader (Stage 10a)** | ✅ Done | Grades matured predictions against market reality |
+| **Statistical Drift Analyzer (Stage 10b)** | ✅ Done | Detects threshold miscalibration from win/loss data |
+| **Time Machine Simulator (Stage 10c)** | ✅ Done | Backfills 2y of graded production logs for bootstrapping |
+| **GitHub Actions CI/CD** | ✅ Done | Nightly grading + weekly drift analysis |
+| **`threshold_insights` Table** | ✅ Done | Stores drift analyzer suggestions |
+| **`ratios` Sub-Dictionary** | ✅ Done | Populated in `fetch_yfinance_fundamentals()` |
+| **FCF Conversion Calculation** | ✅ Done | Σ(CFO - Capex) / Σ(Net Profit) over 5y |
+| **Memory Service Client Fix** | ✅ Done | Now uses centralized `supabase_admin` from `database.py` |
+| **Death Cross `abs()` Fix** | ✅ Done | Uses `abs(sma_gap_pct)` for gap comparison |
+| **Debt Flag Dual-Check** | ✅ Done | Handles both percentage and ratio format from yfinance |
 | **Auth on Analytics Endpoint** | ❌ Missing | `Depends(get_current_user_id)` not added |
 | **Auth on Tutor Endpoint** | ❌ Missing | Hardcoded test user ID in production code |
 | **CORS Middleware** | ❌ Missing | No CORS configured on FastAPI |
@@ -1175,7 +1331,7 @@ python test_pipeline.py
 
 ---
 
-## 23. Known Issues & Audit Findings
+## 25. Known Issues & Audit Findings
 
 ### Critical
 
@@ -1198,8 +1354,6 @@ python test_pipeline.py
 |---|---|---|
 | P0-06 | `redis` declared but never imported | Unnecessary dependency weight |
 | P6-01 | No rate limiting | Single client can flood expensive LLM calls |
-| P2-02 | Debt/Equity unit mismatch in swing | `debt_flag` effectively dead code (requires D/E > 15,000%) |
-| P8-01 | Death cross gap check uses wrong comparison | Death crosses always WARN, never FAIL |
 | Bug | `secular_trend` gate overwritten to PASS immediately after WARN | Long-term secular trend gate is non-functional |
 
 ### Low Priority / Optimizations
@@ -1213,10 +1367,16 @@ python test_pipeline.py
 | P1-01 | Institutional activity data is entirely hardcoded mock |
 | P1-02 | Book value per share is hardcoded mock data |
 | P4-03 | Analysis state truncated to 2000 chars in tutor — no token counting |
+| P10-01 | `grade_ledger.py` only implements swing (15-day) grading — no positional/long-term horizons |
+| P10-02 | `simulate_live_history.py` only evaluates RSI and volume gates — does not run full `evaluate_hard_gates()` |
+| P10-03 | `analyze_drift.py` only checks RSI overbought and volume ratio — no drift checks for death cross, sector RS, or valuation gates |
+| P10-04 | `grade_ledger.py` uses fixed ±5% win/loss thresholds instead of the actual ATR-based trade setup targets |
+| P10-05 | `ledger_service.py` creates its own Supabase client instead of using `database.py` |
+| P10-06 | CI/CD uses Python 3.12 while the project requires Python 3.14+ — potential compatibility issues |
 
 ---
 
-## 24. Roadmap & Planned Features
+## 26. Roadmap & Planned Features
 
 ### v1.1 — Security & Correctness
 
@@ -1224,12 +1384,12 @@ python test_pipeline.py
 - [ ] Remove hardcoded test user ID from tutor route
 - [ ] Add CORS middleware (restrict to frontend origin)
 - [ ] Add rate limiting via `slowapi` (10/minute for analytics, 30/minute for tutor)
-- [ ] Fix death cross gap comparison (`abs()` already used, compare with `>` correctly)
 - [ ] Fix secular_trend gate PASS overwrite bug
-- [ ] Fix debt/equity unit mismatch in swing timeframe
 - [ ] Remove or document mock data (institutional activity, sector PE, BVPS)
 - [ ] Replace MD5 with SHA-256 for profile hashing
 - [ ] Replace `print()` with structured `logging` module
+- [ ] Fix `ledger_service.py` to use centralized Supabase client from `database.py`
+- [ ] Fix `Settings` class to use pydantic-settings properly (remove `os.getenv()` calls)
 
 ### v1.2 — Testing & Quality
 
@@ -1242,6 +1402,15 @@ python test_pipeline.py
   - Trade setup arithmetic
 - [ ] Add integration tests with mock data (no external API calls)
 - [ ] Pin exact dependency versions
+
+### v1.3 — Engine Room Expansion
+
+- [ ] Add positional (90-day) and long-term (365-day) grading horizons to `grade_ledger.py`
+- [ ] Use actual ATR-based trade setup targets for win/loss grading instead of fixed ±5%
+- [ ] Run full `evaluate_hard_gates()` in `simulate_live_history.py` instead of partial gate checks
+- [ ] Add more drift checks: death cross gap, sector RS threshold, valuation ceiling, EPS CAGR floor
+- [ ] Align CI/CD Python version with project requirement (3.14+)
+- [ ] Build admin dashboard for viewing `threshold_insights` data
 
 ### v2.0 — Frontend & UX
 
@@ -1315,6 +1484,19 @@ curl http://localhost:8000/health
 python test_pipeline.py
 ```
 
+### Running Engine Room Scripts
+
+```bash
+# Bootstrap ledger with historical data (one-time)
+python scripts/simulate_live_history.py
+
+# Grade matured predictions manually
+python scripts/grade_ledger.py
+
+# Run drift analysis manually
+python scripts/analyze_drift.py
+```
+
 ### Sample API Call
 
 ```bash
@@ -1361,6 +1543,9 @@ CREATE TABLE algorithmic_ledger (
     pipeline_version TEXT NOT NULL,
     silver_state JSONB,
     gold_verdict JSONB,
+    actual_outcome TEXT NOT NULL DEFAULT 'PENDING',
+    max_favorable_excursion FLOAT8,
+    max_adverse_excursion FLOAT8,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -1381,8 +1566,20 @@ CREATE TABLE chat_sessions (
     episodic_memory JSONB DEFAULT '[]',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Threshold Insights (Drift Analyzer Output)
+CREATE TABLE threshold_insights (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    metric TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    current_threshold FLOAT8 NOT NULL,
+    suggested_threshold FLOAT8 NOT NULL,
+    confidence_score FLOAT8 DEFAULT 0.0,
+    reasoning TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 ```
 
 ---
 
-*Last updated: 2026-06-18 | Pipeline Version: v1.0.0 | Python 3.14+ | FastAPI 0.136.3+ | LangGraph 1.2.4+*
+*Last updated: 2026-06-20 | Pipeline Version: v1.0.0 | Python 3.14+ | FastAPI 0.136.3+ | LangGraph 1.2.4+*

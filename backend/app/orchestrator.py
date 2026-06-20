@@ -1,4 +1,6 @@
 import os
+import logging
+from typing import Dict, Any, List
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
@@ -8,11 +10,13 @@ from app.services.silver_service import compute_silver_metrics
 from app.services.gold_service import evaluate_hard_gates
 from app.schemas.llm import AnalysisOutput
 
+logger = logging.getLogger(__name__)
+
 # ==========================================
 # NODE 1: Data Fetching (Bronze)
 # ==========================================
 async def fetch_data_node(state: AnalysisState) -> AnalysisState:
-    print(f"  [Node] Fetching internet data for {state['ticker']}...")
+    logger.info("Fetching internet data for %s", state['ticker'])
     try:
         bronze = await build_bronze_payload(state['ticker'], state['timeframe'])
         return {"bronze": bronze}
@@ -26,7 +30,7 @@ import asyncio
 async def quant_engine_node(state: AnalysisState) -> AnalysisState:
     if state.get("errors"): return state # Skip if previous node failed
     
-    print(f"  [Node] Executing Quant Math & Hard Gates...")
+    logger.info("Executing Quant Math & Hard Gates...")
     try:
         # P7-01: Offload synchronous Pandas math to background thread
         silver = await asyncio.to_thread(compute_silver_metrics, state['bronze'])
@@ -47,7 +51,7 @@ async def quant_engine_node(state: AnalysisState) -> AnalysisState:
 async def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
     if state.get("errors"): return state
     
-    print(f"  [Node] Passing Gold payload to LOCAL Llama-3.1 Synthesizer...")
+    logger.info("Passing Gold payload to LOCAL Llama-3.1 Synthesizer...")
     gold = state['gold']
     user = state['user_profile']
     
@@ -139,7 +143,7 @@ async def llm_synthesizer_node(state: AnalysisState) -> AnalysisState:
         return {"llm_output": response_dict}
         
     except Exception as e:
-        print(f"  [⚠️] LLM Offline/Failed. Falling back to deterministic verdict. Error: {str(e)}")
+        logger.warning("LLM Offline/Failed. Falling back to deterministic verdict. Error: %s", str(e))
         return {
             "llm_output": {
                 "verdict": gold.verdict,

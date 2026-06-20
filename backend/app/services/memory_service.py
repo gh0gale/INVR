@@ -1,9 +1,12 @@
+import logging
 from app.database import supabase_admin as supabase
 from app.pipeline.memory_graph import extract_memory_chunk
 
+logger = logging.getLogger(__name__)
+
 async def manage_session_memory(session_id: str, user_id: str, user_msg: str, ai_msg: str, topic_changed: bool = False):
     """Handles chat persistence and chunked semantic extraction."""
-    print(f"  [DB] Syncing chat state for session {session_id}...")
+    logger.info("Syncing chat state for session %s", session_id)
     
     # 1. Fetch current chat session
     session_res = supabase.table("chat_sessions").select("*").eq("session_id", session_id).execute()
@@ -27,7 +30,7 @@ async def manage_session_memory(session_id: str, user_id: str, user_msg: str, ai
 
     # 3. CHUNKED EVICTION LOGIC
     if len(working_mem) >= 16 or topic_changed:
-        print("  [Memory] Watermark reached. Triggering Chunked Eviction...")
+        logger.info("Memory watermark reached. Triggering Chunked Eviction...")
         
         chunk_to_summarize = working_mem[:10]
         chunk_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in chunk_to_summarize])
@@ -45,7 +48,7 @@ async def manage_session_memory(session_id: str, user_id: str, user_msg: str, ai
                 current_semantic["latest_portfolio_note"] = extracted_data["portfolio_updates"]
             
             supabase.table("user_profiles").update({"semantic_profile": current_semantic}).eq("id", user_id).execute()
-            print("  [DB] Semantic Profile Patched.")
+            logger.info("Semantic Profile Patched.")
 
         # Update Session Data
         episodic = session_data.get("episodic_memory", [])
