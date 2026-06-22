@@ -27,23 +27,33 @@ const glass = {
     } as React.CSSProperties,
 
     nested: {
-        background: 'linear-gradient(145deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.01) 100%)',
-        backdropFilter: 'blur(40px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(40px) saturate(180%)',
-        border: '1px solid rgba(255,255,255,0.085)',
+        background: 'linear-gradient(145deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.028) 100%)',
+        backdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+        WebkitBackdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+        border: '1px solid rgba(255,255,255,0.13)',
         boxShadow: [
-            'inset 0 1px 0 rgba(255,255,255,0.20)',
-            'inset 1px 0 0 rgba(255,255,255,0.06)',
-            '0 8px 32px rgba(0,0,0,0.22)',
+            'inset 0 1.5px 0 rgba(255,255,255,0.26)',
+            'inset 1.5px 0 0 rgba(255,255,255,0.09)',
+            'inset -1px 0 0 rgba(0,0,0,0.08)',
+            'inset 0 -1.5px 0 rgba(0,0,0,0.10)',
+            '0 40px 100px rgba(0,0,0,0.52)',
+            '0 8px 20px rgba(0,0,0,0.28)',
         ].join(', '),
     } as React.CSSProperties,
 
     pill: {
-        background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)',
-        backdropFilter: 'blur(24px) saturate(160%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(160%)',
-        border: '1px solid rgba(255,255,255,0.10)',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.20), 0 4px 12px rgba(0,0,0,0.15)',
+        background: 'linear-gradient(145deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.028) 100%)',
+        backdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+        WebkitBackdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+        border: '1px solid rgba(255,255,255,0.13)',
+        boxShadow: [
+            'inset 0 1.5px 0 rgba(255,255,255,0.26)',
+            'inset 1.5px 0 0 rgba(255,255,255,0.09)',
+            'inset -1px 0 0 rgba(0,0,0,0.08)',
+            'inset 0 -1.5px 0 rgba(0,0,0,0.10)',
+            '0 40px 100px rgba(0,0,0,0.52)',
+            '0 8px 20px rgba(0,0,0,0.28)',
+        ].join(', '),
     } as React.CSSProperties,
 };
 
@@ -278,31 +288,10 @@ export default function Landing() {
                     INVR<span className="text-emerald-500">.</span>
                 </div>
 
-                <div
-                    className="hidden md:flex gap-1 items-center px-2 py-2 rounded-[1.25rem]"
-                    style={glass.pill}
-                >
-                    {navItems.map((item, i) => (
-                        <span
-                            key={item}
-                            onClick={() => setActiveNav(i)}
-                            className={`relative px-5 py-2 text-sm font-bold tracking-tighter cursor-pointer transition-colors rounded-[0.875rem] ${activeNav === i ? 'text-white' : 'text-white/50 hover:text-white'
-                                }`}
-                        >
-                            {activeNav === i && (
-                                <motion.div
-                                    layoutId="nav-active-pill"
-                                    className="absolute inset-0 rounded-[0.875rem] bg-white/[0.07]"
-                                    style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)' }}
-                                    transition={springSoft}
-                                />
-                            )}
-                            <span className="relative z-10">{item}</span>
-                        </span>
-                    ))}
-                </div>
+
 
                 <motion.button
+                    onClick={() => navigate('/auth')}
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                     transition={springPress}
@@ -405,45 +394,7 @@ export default function Landing() {
                             linking your brokerage accounts.
                         </p>
 
-                        <div className="flex flex-col gap-6">
-                            <div className="flex items-center gap-4">
-                                <motion.button
-                                    whileHover={{ scale: 1.03 }}
-                                    whileTap={{ scale: 0.96 }}
-                                    animate={{
-                                        boxShadow: [
-                                            '0 0 30px rgba(255,255,255,0.15)',
-                                            '0 0 42px rgba(255,255,255,0.22)',
-                                            '0 0 30px rgba(255,255,255,0.15)',
-                                        ],
-                                    }}
-                                    transition={{
-                                        scale: springPress,
-                                        boxShadow: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
-                                    }}
-                                    onClick={() => navigate('/onboarding')}
-                                    className="px-8 py-4 rounded-[1.25rem] bg-white text-black font-bold tracking-tighter flex items-center gap-3 hover:bg-gray-100 transition-colors"
-                                >
-                                    Deploy Engine
-                                    <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
-                                </motion.button>
 
-                                <motion.button
-                                    whileHover={{ scale: 1.03 }}
-                                    whileTap={{ scale: 0.96 }}
-                                    transition={springPress}
-                                    className="px-8 py-4 rounded-[1.25rem] text-white font-bold tracking-tighter transition-colors"
-                                    style={glass.pill}
-                                >
-                                    Explore Methodology
-                                </motion.button>
-                            </div>
-
-                            <div className="flex items-center gap-2 text-[12px] font-bold tracking-tighter uppercase text-white/50 mt-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-                                <span>Quantitative Execution • Zero Hallucination</span>
-                            </div>
-                        </div>
                     </motion.div>
 
                     {/* RIGHT COLUMN: Interactive Dashboard Card */}
@@ -665,7 +616,7 @@ export default function Landing() {
                             <div className={phase.edgeClass} />
                             <div
                                 className="p-10 md:p-14 rounded-[2.5rem] relative overflow-hidden"
-                                style={glass.base}
+                                style={glass.nested}
                             >
                                 {/* Giant typographic numeral — replaces the
                                     generic icon-in-a-box badge entirely */}

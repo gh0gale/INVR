@@ -5,6 +5,10 @@ brief in full, plus the exact design tokens, component recipes, and anti-slop ru
 derived from building the Landing page — so every new page is pixel- and physics-consistent with
 it, not just "in the same vibe."
 
+> **Before building anything, read §4.1.** It contains a real reference screenshot of the glass
+> material and the exact rules for reproducing it — the look it documents is dark and restrained
+> by design, not the brighter "frosted" glass the term might suggest elsewhere.
+
 ---
 
 ## 0. ROLE & MISSION
@@ -157,6 +161,58 @@ fourth glass recipe without a structural reason (i.e., a genuinely new nesting d
 **Corner radii convention:** `rounded-[2.5rem]` for outer cards, `rounded-[1.5rem]` for nested
 panels, `rounded-[1.25rem]` to `rounded-[0.875rem]` for pills/buttons/nav items, `rounded-full` for
 status dots and circular badges only.
+
+---
+
+## 4.1 CANONICAL REFERENCE — lock this exact look
+
+This is a real render of the hero card (`glass.base` containing `glass.pill` and `glass.nested`
+children) using the tokens in §4 exactly as written. **This image is the ground truth.** Any new
+card on any new page should be checked against it — if a new card looks more "frosted/luminous" or
+more "flat/invisible" than this, the tokens were tuned wrong.
+
+![Canonical liquid glass card reference](./reference-hero-card.png)
+
+**Read carefully — this is intentionally a *dark, restrained, smoked* glass, not a bright,
+luminous, "frosted white" glass.** If you've seen visionOS/iOS Liquid Glass and expected something
+closer to that — brighter, more obviously translucent, clear color bleeding through — that is
+**not** the target here. This system trades that luminosity for an editorial, almost charcoal,
+quietness, and that restraint is itself the anti-slop choice: a too-bright frosted panel is closer
+to the generic "AI slop glass card" look this whole system exists to avoid.
+
+**Why it looks exactly like this — three things have to be true together, every time:**
+
+1. **The page background must be near-black and mostly empty where the card sits.** `#030508`
+   behind it, with only the sparse Three.js starfield (§7) for texture. `backdrop-filter:
+   saturate(200%) brightness(108%)` amplifies whatever color is *behind* the glass — point it at
+   near-black and you get this exact smoked-charcoal result. **Do not** assume a card looks
+   "broken" or "unfinished" because it isn't glowing or showing obvious color refraction — that's
+   correct, not a bug. A glass card does **not** need one of the morphing color blobs (§7)
+   positioned directly behind it to look right; this reference card has none nearby and is correct
+   as-is.
+2. **The alpha values in §4 are final, not a starting point.** The background gradient
+   (`0.09 → 0.028`), the border (`0.13`), and the specular highlight (`0.26` top inset) are tuned
+   precisely to produce: a barely-there lightening of the surface versus the page background, a
+   thin but visible edge outline, and a faint brightened hairline at the top of the card (look
+   closely at the top edge in the reference — that's the entire "specular highlight," it is meant
+   to be subtle, not a visible shine). **Never increase these values "to make the glass pop" or
+   "make it read more clearly as glass."** If a card isn't reading as glass, the fix is contrast
+   against its neighbors (tier 1 vs. tier 2 vs. tier 3, per §4's three-tier rule) and correct
+   corner-radius/shadow layering — not higher opacity.
+3. **Content sits at full opacity directly on the glass, with no extra scrim.** Headlines are pure
+   `text-white`, captions/labels use the white-opacity ladder from §3 — never add a darkening
+   overlay behind text "for legibility." Legibility comes from the glass already being dark enough
+   relative to white text; an extra scrim flattens the depth and is what makes a card start to look
+   like a generic dark card-with-border instead of an actual material.
+
+**What you should be able to see in the reference, and should check for on every new card:**
+- A continuous, very thin (1px) lighter-gray border tracing the full rounded outline.
+- A faint brightened line specifically along the *top* inner edge only (not all four edges evenly)
+  — that asymmetry is what reads as "light source from above" rather than a flat stroke.
+- Three visibly distinct surface depths at once (outer card, the chart/verdict panels nested
+  inside it, the small pills/badges nested inside those) — each very slightly lighter than the one
+  it sits on, never the same flatness twice.
+- No visible blur-smear of color from behind the card — that's expected here, not missing.
 
 ---
 
