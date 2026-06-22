@@ -1,6 +1,6 @@
 # Stock Analysis Pipeline Blueprint
 
-> Complete specification of Bronze Layer data fetched and Silver Layer metrics calculated for each trading timeframe.
+> Complete specification of Bronze Layer data fetched, Silver Layer metrics calculated, and the Gold Layer verdict logic for each trading timeframe.
 
 ---
 
@@ -156,7 +156,7 @@
 | `stock_vs_sector_rs` | `price_history`, `sector_history` | 50-day relative strength. A positive delta means the stock is outperforming its sector. |
 | `market_regime` | `sector_history` | Evaluates broader market structure (index close vs 50/200 SMA). "bullish", "bearish", or "neutral". Bearish suppresses bullish setups. |
 | `sma_20` | — | Computed but **low weight.** Micro-trend noise for a multi-month hold. |
-| `atr_14` | — | Computed but **low weight.** Stop-loss on positional trades is based on % drawdown tolerance, not ATR ticks. |
+| `atr_14` | `High, Low, Close` | Daily ATR in ₹. Sets the stop-loss distance (2×ATR below entry) and targets (3×/5×ATR) for Trade Setup generation. |
 
 ---
 
@@ -246,5 +246,37 @@
 | **Fundamental weight** | 0% | 30% | 70% | 90% |
 | **Key technical signal** | ATR stop + volume spike | SMA-20/50 + RSI entry | SMA-200 structure + death cross | Weekly SMA-200 + 5yr RS |
 | **Key fundamental signal** | Circuit status (gate only) | Debt flag + institutional bias | ROE, CFO quality, promoter trend | EPS CAGR, FCF conversion, ROE consistency |
-| **Stop-loss basis** | ATR (₹ per candle) | 2×ATR below entry | % drawdown tolerance | Portfolio % allocation |
+| **Stop-loss basis** | 1.5×ATR below entry | 2×ATR below entry | 2×ATR below entry | Portfolio % allocation |
 | **Free data sources** | yfinance, nsepython | yfinance, nsepython, NSE portal | yfinance, nsepython, Screener.in, NSE | yfinance, Screener.in, NSE portal |
+
+---
+---
+
+## 5. Gold Layer (Verdict System)
+
+The Gold Layer acts as the quantitative engine that consumes `SilverMetrics` and computes the ground truth verdict through deterministic hard gates. 
+
+### A. Universal Gates
+Applies to all timeframes before specific checks:
+- **Circuit Limits**: If upper circuit -> `WARN` (Wait for liquidity). If lower circuit -> `BLOCK` (No entry).
+- **Institutional Volume**: Current volume must be $\ge$ `volume_avg_20 * min_ratio`. Else -> `WARN`.
+
+### B. Verdict Resolution Logic
+Hard gates are aggregated into one of 5 definitive states based on `PASS`, `WARN`, and `FAIL` counts:
+1. **AVOID**: Execution blocked (e.g., Lower Circuit).
+2. **CAUTION**: 2 or more gates `FAIL`.
+3. **MONITOR**: Exactly 1 gate `FAIL`.
+4. **STRONG BUY**: All active gates `PASS` (100% clearance).
+5. **BUY ON DIP**: Default for mixed signals supported by structural floors.
+
+### C. Post-Verdict Overrides
+Applied sequentially to catch edge cases:
+1. **Institutional Volume Confirmation**: If `STRONG BUY` but volume is < 1.5× the 20-period average, downgraded to `MONITOR` (lacks institutional participation).
+2. **Dynamic "Buy Zone" Filter**: If `BUY ON DIP` but price is not within a 3% tolerance of the 50-day or 200-day SMA, downgraded to `CAUTION` (floating in mid-air).
+3. **Top Down Macro Override**: If the market regime is `bearish`, any `STRONG BUY` or `BUY ON DIP` is downgraded to `CAUTION`.
+
+### D. Trade Setup Generation
+Generated purely arithmetically via ATR (only if verdict is `STRONG BUY` and timeframe is not long-term):
+- **Intraday**: Stop Loss = `-1.5×ATR`, Targets = `+2.5×ATR`, `+4.0×ATR`.
+- **Swing & Positional**: Stop Loss = `-2.0×ATR`, Targets = `+3.0×ATR`, `+5.0×ATR`.
+- **Risk Sizing**: Calculates position size based on max 2% total capital risk per trade.

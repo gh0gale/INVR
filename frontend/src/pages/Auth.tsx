@@ -10,8 +10,8 @@ import { ArrowRight, X } from 'lucide-react';
 const glass = {
     base: {
         background: 'linear-gradient(145deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.028) 100%)',
-        backdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
-        WebkitBackdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+        backdropFilter: 'blur(72px)',
+        WebkitBackdropFilter: 'blur(72px)',
         border: '1px solid rgba(255,255,255,0.13)',
         boxShadow: [
             'inset 0 1.5px 0 rgba(255,255,255,0.26)',
@@ -25,8 +25,6 @@ const glass = {
 
     nested: {
         background: 'linear-gradient(145deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.01) 100%)',
-        backdropFilter: 'blur(40px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(40px) saturate(180%)',
         border: '1px solid rgba(255,255,255,0.085)',
         boxShadow: [
             'inset 0 1px 0 rgba(255,255,255,0.20)',
@@ -37,8 +35,6 @@ const glass = {
 
     pill: {
         background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)',
-        backdropFilter: 'blur(24px) saturate(160%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(160%)',
         border: '1px solid rgba(255,255,255,0.10)',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.20), 0 4px 12px rgba(0,0,0,0.15)',
     } as React.CSSProperties,
@@ -214,9 +210,10 @@ export default function Auth() {
                     initial={{ opacity: 0, y: 30, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     transition={springSoft}
-                    className="w-full max-w-4xl relative overflow-hidden rounded-[2.5rem] flex flex-col md:flex-row min-h-[500px]"
-                    style={glass.base}
+                    className="w-full max-w-4xl relative rounded-[2.5rem] flex flex-col md:flex-row min-h-[500px]"
+                    style={{ transformStyle: "preserve-3d" }}
                 >
+                    <div className="absolute inset-0 rounded-[2.5rem] overflow-hidden" style={glass.base} />
                     {/* LEFT PANE: Signature Element */}
                     <div className="hidden md:flex flex-1 relative border-r border-white/10 overflow-hidden">
                         {/* Huge background watermark for depth */}

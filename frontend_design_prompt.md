@@ -118,8 +118,8 @@ const glass = {
   // Tier 1 — outer card surface (hero cards, phase/narrative cards, mobile menu panel)
   base: {
     background: 'linear-gradient(145deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.028) 100%)',
-    backdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
-    WebkitBackdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+    backdropFilter: 'blur(72px)',
+    WebkitBackdropFilter: 'blur(72px)',
     border: '1px solid rgba(255,255,255,0.13)',
     boxShadow: [
       'inset 0 1.5px 0 rgba(255,255,255,0.26)',   // top specular highlight
@@ -132,10 +132,9 @@ const glass = {
   },
 
   // Tier 2 — nested panel sitting on top of a base surface (chart panels, score badges, verdict box)
+  // NO backdrop-filter — crystal clear transparent glass, no blur
   nested: {
     background: 'linear-gradient(145deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.01) 100%)',
-    backdropFilter: 'blur(40px) saturate(180%)',
-    WebkitBackdropFilter: 'blur(40px) saturate(180%)',
     border: '1px solid rgba(255,255,255,0.085)',
     boxShadow: [
       'inset 0 1px 0 rgba(255,255,255,0.20)',
@@ -145,10 +144,9 @@ const glass = {
   },
 
   // Tier 3 — tight pill/badge surfaces (nav group, status badges, secondary buttons)
+  // NO backdrop-filter — crystal clear transparent glass, no blur
   pill: {
     background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)',
-    backdropFilter: 'blur(24px) saturate(160%)',
-    WebkitBackdropFilter: 'blur(24px) saturate(160%)',
     border: '1px solid rgba(255,255,255,0.10)',
     boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.20), 0 4px 12px rgba(0,0,0,0.15)',
   },
@@ -183,13 +181,14 @@ to the generic "AI slop glass card" look this whole system exists to avoid.
 **Why it looks exactly like this — three things have to be true together, every time:**
 
 1. **The page background must be near-black and mostly empty where the card sits.** `#030508`
-   behind it, with only the sparse Three.js starfield (§7) for texture. `backdrop-filter:
-   saturate(200%) brightness(108%)` amplifies whatever color is *behind* the glass — point it at
-   near-black and you get this exact smoked-charcoal result. **Do not** assume a card looks
-   "broken" or "unfinished" because it isn't glowing or showing obvious color refraction — that's
-   correct, not a bug. A glass card does **not** need one of the morphing color blobs (§7)
-   positioned directly behind it to look right; this reference card has none nearby and is correct
-   as-is.
+   behind it, with only the sparse Three.js starfield (§7) for texture. `backdrop-filter: blur(72px)`
+   heavily blurs whatever is behind the glass — point it at near-black and you get the exact
+   smoked-charcoal result. **Do not** use `saturate()` or `brightness()` in the backdrop-filter —
+   these amplify whatever color sits behind the glass (the emerald/teal background blobs) and create
+   a muddy green tint instead of clean glass. **Do not** assume a card looks "broken" or
+   "unfinished" because it isn't glowing or showing obvious color refraction — that's correct,
+   not a bug. A glass card does **not** need one of the morphing color blobs (§7) positioned
+   directly behind it to look right; this reference card has none nearby and is correct as-is.
 2. **The alpha values in §4 are final, not a starting point.** The background gradient
    (`0.09 → 0.028`), the border (`0.13`), and the specular highlight (`0.26` top inset) are tuned
    precisely to produce: a barely-there lightening of the surface versus the page background, a

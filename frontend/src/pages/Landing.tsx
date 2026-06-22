@@ -13,8 +13,8 @@ import { ArrowRight, Menu, X } from 'lucide-react';
 const glass = {
     base: {
         background: 'linear-gradient(145deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.028) 100%)',
-        backdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
-        WebkitBackdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
+        backdropFilter: 'blur(72px)',
+        WebkitBackdropFilter: 'blur(72px)',
         border: '1px solid rgba(255,255,255,0.13)',
         boxShadow: [
             'inset 0 1.5px 0 rgba(255,255,255,0.26)',
@@ -27,33 +27,19 @@ const glass = {
     } as React.CSSProperties,
 
     nested: {
-        background: 'linear-gradient(145deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.028) 100%)',
-        backdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
-        WebkitBackdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
-        border: '1px solid rgba(255,255,255,0.13)',
+        background: 'linear-gradient(145deg, rgba(255,255,255,0.055) 0%, rgba(255,255,255,0.01) 100%)',
+        border: '1px solid rgba(255,255,255,0.085)',
         boxShadow: [
-            'inset 0 1.5px 0 rgba(255,255,255,0.26)',
-            'inset 1.5px 0 0 rgba(255,255,255,0.09)',
-            'inset -1px 0 0 rgba(0,0,0,0.08)',
-            'inset 0 -1.5px 0 rgba(0,0,0,0.10)',
-            '0 40px 100px rgba(0,0,0,0.52)',
-            '0 8px 20px rgba(0,0,0,0.28)',
+            'inset 0 1px 0 rgba(255,255,255,0.20)',
+            'inset 1px 0 0 rgba(255,255,255,0.06)',
+            '0 8px 32px rgba(0,0,0,0.22)',
         ].join(', '),
     } as React.CSSProperties,
 
     pill: {
-        background: 'linear-gradient(145deg, rgba(255,255,255,0.09) 0%, rgba(255,255,255,0.028) 100%)',
-        backdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
-        WebkitBackdropFilter: 'blur(72px) saturate(200%) brightness(108%)',
-        border: '1px solid rgba(255,255,255,0.13)',
-        boxShadow: [
-            'inset 0 1.5px 0 rgba(255,255,255,0.26)',
-            'inset 1.5px 0 0 rgba(255,255,255,0.09)',
-            'inset -1px 0 0 rgba(0,0,0,0.08)',
-            'inset 0 -1.5px 0 rgba(0,0,0,0.10)',
-            '0 40px 100px rgba(0,0,0,0.52)',
-            '0 8px 20px rgba(0,0,0,0.28)',
-        ].join(', '),
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.20), 0 4px 12px rgba(0,0,0,0.15)',
     } as React.CSSProperties,
 };
 
@@ -600,11 +586,6 @@ export default function Landing() {
                 <div className="relative w-full max-w-5xl mx-auto px-8 md:px-16 flex flex-col gap-32 pb-32">
 
                     <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[1px] bg-white/[0.04] -z-10" />
-                    <motion.div
-                        style={{ top: orbY, scale: orbScale }}
-                        className="absolute left-1/2 -translate-x-1/2 w-[300px] h-[300px] bg-emerald-500/20 rounded-full blur-[100px] -z-10 pointer-events-none"
-                    />
-
                     {phases.map((phase) => (
                         <motion.div
                             key={phase.num}
@@ -616,7 +597,7 @@ export default function Landing() {
                             <div className={phase.edgeClass} />
                             <div
                                 className="p-10 md:p-14 rounded-[2.5rem] relative overflow-hidden"
-                                style={glass.nested}
+                                style={glass.base}
                             >
                                 {/* Giant typographic numeral — replaces the
                                     generic icon-in-a-box badge entirely */}
