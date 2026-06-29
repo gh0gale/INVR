@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, useSpring, useScroll } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { ArrowRight, Menu, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 
 // ==========================================
 // GLASS STYLE SYSTEM
@@ -139,8 +139,6 @@ function DataPoints() {
 export default function Landing() {
     const navigate = useNavigate();
 
-    const navItems = ['Features', 'Methodology', 'How it Works'];
-    const [activeNav, setActiveNav] = useState(0);
     const [mobileOpen, setMobileOpen] = useState(false);
 
     // 3D Tilt Effect for the Hero Card
@@ -196,8 +194,10 @@ export default function Landing() {
             body:
                 "Cut through the noise. Stop scrolling social feeds hoping for conviction. Input a ticker and watch the engine instantly dissect decades of SEC filings, historical price action, and institutional flow in milliseconds.",
             align: 'self-start' as const,
-            edgeClass: 'absolute -left-12 top-10 w-24 h-[1px] bg-emerald-500/20 hidden md:block',
+            edgeClass: 'absolute -left-12 top-10 w-24 h-[1px] bg-emerald-500/40 hidden md:block',
             eyebrowClass: 'text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-1.5',
+            pillLabel: '01 / 03',
+            pillAccent: 'text-emerald-400',
         },
         {
             num: '02',
@@ -206,8 +206,10 @@ export default function Landing() {
             body:
                 "No bias. No bags. The system ruthlessly forces the asset through strict quantitative hard-gates — comparing trailing valuations, momentum convergence, and sector relative strength against absolute market medians.",
             align: 'self-end' as const,
-            edgeClass: 'absolute -right-12 top-10 w-24 h-[1px] bg-teal-500/20 hidden md:block',
+            edgeClass: 'absolute -right-12 top-10 w-24 h-[1px] bg-teal-500/40 hidden md:block',
             eyebrowClass: 'text-[11px] font-bold tracking-[0.15em] uppercase text-teal-400 mb-1.5',
+            pillLabel: '02 / 03',
+            pillAccent: 'text-teal-400',
         },
         {
             num: '03',
@@ -216,8 +218,10 @@ export default function Landing() {
             body:
                 "Receive a crystal-clear, deterministic verdict. Know your exact entry parameters, understand the mathematical risk vector, and deploy your capital like a top-tier institutional fund. Get it done.",
             align: 'self-start' as const,
-            edgeClass: 'absolute -left-12 top-10 w-24 h-[1px] bg-emerald-500/20 hidden md:block',
+            edgeClass: 'absolute -left-12 top-10 w-24 h-[1px] bg-emerald-500/40 hidden md:block',
             eyebrowClass: 'text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-1.5',
+            pillLabel: '03 / 03',
+            pillAccent: 'text-emerald-400',
         },
     ];
 
@@ -255,6 +259,19 @@ export default function Landing() {
                     borderRadius: ['50%', '60% 40% 38% 62% / 55% 45% 55% 45%', '40% 60% 62% 38% / 45% 55% 45% 55%', '50%'],
                 }}
                 transition={{ duration: 28, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+            />
+
+            {/* Blob C — center blob for tall pages (>200vh) per §7 */}
+            <motion.div
+                className="fixed top-[45%] left-[45%] w-[450px] h-[450px] bg-emerald-500/5 blur-[120px] pointer-events-none"
+                initial={{ borderRadius: '50%' }}
+                animate={{
+                    x: [0, 20, -20, 0],
+                    y: [0, -20, 20, 0],
+                    scale: [1, 1.1, 0.95, 1],
+                    borderRadius: ['50%', '42% 58% 60% 40% / 50% 45% 55% 50%', '58% 42% 40% 60% / 45% 55% 45% 55%', '50%'],
+                }}
+                transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut', delay: 5 }}
             />
 
             {/* =========================================
@@ -331,11 +348,10 @@ export default function Landing() {
                         className="md:hidden fixed top-24 right-8 z-50 flex flex-col gap-1 p-3 rounded-[1.5rem] min-w-[200px]"
                         style={glass.base}
                     >
-                        {navItems.map((item, i) => (
+                        {['Features', 'Methodology', 'How it Works'].map((item) => (
                             <span
                                 key={item}
                                 onClick={() => {
-                                    setActiveNav(i);
                                     setMobileOpen(false);
                                 }}
                                 className="px-4 py-3 text-sm font-bold tracking-tighter text-white/70 hover:text-white rounded-[1rem] hover:bg-white/[0.06] cursor-pointer transition-colors"
@@ -585,7 +601,19 @@ export default function Landing() {
 
                 <div className="relative w-full max-w-5xl mx-auto px-8 md:px-16 flex flex-col gap-32 pb-32">
 
+                    {/* Vertical guide line */}
                     <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-[1px] bg-white/[0.04] -z-10" />
+
+                    {/* Scroll-driven glowing orb traveling the guide line (§6.3) */}
+                    <motion.div
+                        className="absolute left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-emerald-500 -z-[5] pointer-events-none"
+                        style={{
+                            top: orbY,
+                            scale: orbScale,
+                            boxShadow: '0 0 12px rgba(16,185,129,0.9), 0 0 40px rgba(16,185,129,0.4)',
+                        }}
+                    />
+
                     {phases.map((phase) => (
                         <motion.div
                             key={phase.num}
@@ -618,6 +646,26 @@ export default function Landing() {
                                     <p className="text-white/55 text-lg leading-relaxed font-bold tracking-tighter max-w-xl">
                                         {phase.body}
                                     </p>
+
+                                    {/* §4.2 MANDATORY — nested glass element to prevent
+                                       flat dark box rendering. Phase step pill badge. */}
+                                    <div className="mt-8 flex items-center gap-3">
+                                        <span
+                                            className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold tracking-[0.12em] uppercase ${phase.pillAccent}`}
+                                            style={glass.pill}
+                                        >
+                                            {phase.pillLabel}
+                                        </span>
+                                        <div
+                                            className="inline-flex items-center gap-2 px-4 py-2 rounded-[1.25rem]"
+                                            style={glass.nested}
+                                        >
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+                                            <span className={`text-[10px] font-bold tracking-[0.15em] uppercase ${phase.pillAccent}`}>
+                                                Phase Complete
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </motion.div>

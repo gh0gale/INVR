@@ -8,21 +8,22 @@
   }
 
   .bg-grid {
-    background-size: 60px 60px;
+    background-size: 40px 40px;
     background-image:
-      linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-    mask-image: linear-gradient(to bottom, black 20%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, black 20%, transparent 100%);
+      linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   }
 
   .perspective-1000 {
     perspective: 1000px;
   }
 
-  /* Finance-focused gradient: Teal -> Emerald -> Light Green */
+  /* Finance-focused gradient: exact teal → emerald two-stop */
   .text-gradient-finance {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-teal-400 via-emerald-400 to-green-300;
+    background: linear-gradient(90deg, #0D9488, #10B981);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 }
 
