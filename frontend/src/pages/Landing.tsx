@@ -101,7 +101,7 @@ const PRICE_CHART = buildPriceChart(RELIANCE_PRICES);
 // 1. THREE.JS: Continuous Market Data Stream
 // ==========================================
 function DataPoints() {
-    const pointsRef = useRef<any>();
+    const pointsRef = useRef<any>(null);
     const count = 2500;
 
     const positions = new Float32Array(count * 3);
@@ -121,12 +121,7 @@ function DataPoints() {
     return (
         <points ref={pointsRef}>
             <bufferGeometry>
-                <bufferAttribute
-                    attach="attributes-position"
-                    count={count}
-                    array={positions}
-                    itemSize={3}
-                />
+                <bufferAttribute attach="attributes-position" args={[positions, 3]} />
             </bufferGeometry>
             <pointsMaterial size={0.045} color="#10B981" transparent opacity={0.8} sizeAttenuation />
         </points>
@@ -396,7 +391,15 @@ export default function Landing() {
                             linking your brokerage accounts.
                         </p>
 
-
+                        <motion.button
+                            onClick={() => navigate('/auth')}
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.97 }}
+                            transition={springPress}
+                            className="px-8 py-4 rounded-[1.25rem] bg-white text-black font-bold tracking-tighter text-base hover:bg-gray-100 transition-colors"
+                        >
+                            Access Terminal
+                        </motion.button>
                     </motion.div>
 
                     {/* RIGHT COLUMN: Interactive Dashboard Card */}

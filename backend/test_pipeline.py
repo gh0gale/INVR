@@ -58,6 +58,8 @@ def _get(path: str, timeout: int = 10) -> dict:
 def _post(path: str, body: dict, headers: dict = {}, timeout: int = 90) -> tuple[dict, int]:
     data = json.dumps(body).encode("utf-8")
     req_headers = {"Content-Type": "application/json"}
+    if SUPABASE_KEY:
+        req_headers["Authorization"] = f"Bearer {SUPABASE_KEY}"
     req_headers.update(headers)
     req  = urllib.request.Request(
         f"{BASE_URL}{path}", data=data,
@@ -75,6 +77,8 @@ def _post(path: str, body: dict, headers: dict = {}, timeout: int = 90) -> tuple
 def _stream(path: str, body: dict, headers: dict = {}, timeout: int = 90) -> str:
     data = json.dumps(body).encode("utf-8")
     req_headers = {"Content-Type": "application/json"}
+    if SUPABASE_KEY:
+        req_headers["Authorization"] = f"Bearer {SUPABASE_KEY}"
     req_headers.update(headers)
     req  = urllib.request.Request(
         f"{BASE_URL}{path}", data=data,

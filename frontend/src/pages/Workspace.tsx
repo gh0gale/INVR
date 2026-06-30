@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Search, Plus, BookmarkCheck, CornerDownRight } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../supabase';
 
 // ==========================================
 // 1. LIQUID GLASS SYSTEM — exact §4 tokens
@@ -51,7 +53,7 @@ const springPress = { type: 'spring', stiffness: 420, damping: 26, mass: 0.6 } a
 // 2. THREE.JS STARFIELD — §7 exact recipe
 // ==========================================
 function DataPoints() {
-    const pointsRef = useRef<any>();
+    const pointsRef = useRef<any>(null);
     const count = 2500;
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
@@ -68,9 +70,8 @@ function DataPoints() {
     return (
         <points ref={pointsRef}>
             <bufferGeometry>
-                <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
+                <bufferAttribute attach="attributes-position" args={[positions, 3]} />
             </bufferGeometry>
-            {/* opacity: 0.8 per §7 exact spec */}
             <pointsMaterial size={0.045} color="#10B981" transparent opacity={0.8} sizeAttenuation />
         </points>
     );
@@ -108,7 +109,7 @@ function buildPriceChart(prices: number[]) {
 }
 
 // ==========================================
-// 4. DATA
+// 4. DATA FALLBACKS
 // ==========================================
 const MOCK_PRICES = {
     '1W': [2800, 2790, 2810, 2825, 2840, 2835, 2847.50],
@@ -116,6 +117,14 @@ const MOCK_PRICES = {
     '6M': [2652, 2638, 2694, 2705, 2734, 2696, 2648, 2748, 2709, 2771, 2733, 2789, 2826, 2847.50],
     '1Y': [2400, 2450, 2380, 2500, 2550, 2600, 2580, 2650, 2700, 2680, 2750, 2847.50],
 } as const;
+
+function getPricesForChart(tf: '1W' | '1M' | '6M' | '1Y', currentPrice?: number): number[] {
+    const mockPattern = MOCK_PRICES[tf];
+    if (!currentPrice) return [...mockPattern];
+    const base = mockPattern[mockPattern.length - 1];
+    const scale = currentPrice / base;
+    return mockPattern.map(p => p * scale);
+}
 
 const BRONZE_DATA = [
     { label: 'Market Cap', value: '₹19.3T' },
@@ -152,47 +161,289 @@ const getTime = () => new Date().toLocaleTimeString('en-US', { hour12: false });
 // ==========================================
 export default function Workspace() {
     const navigate = useNavigate();
+    const { session, profile, logout } = useAuth();
     const [timeframe, setTimeframe] = useState<'1W' | '1M' | '6M' | '1Y'>('6M');
-    const [watchlist, setWatchlist] = useState<string[]>(['HDFCBANK.NS', 'TCS.NS', 'INFY.NS']);
+    
+    // Watchlist state (tickers user has bookmarked)
+    const [watchlist, setWatchlist] = useState<string[]>(['RELIANCE.NS', 'TCS.NS', 'INFY.NS']);
     const [searchQuery, setSearchQuery] = useState('');
+
+    // Dynamic ledger items fetched from DB
+    const [ledgerItems, setLedgerItems] = useState<any[]>([]);
+    const [activeItem, setActiveItem] = useState<any | null>(null);
 
     const [command, setCommand] = useState('');
     const [log, setLog] = useState<{ role: 'sys' | 'user' | 'ai'; text: string; time: string }[]>([
         { role: 'sys', text: 'INVR QUANTITATIVE ENGINE ONLINE. KERNEL V4.2.0', time: getTime() },
-        { role: 'sys', text: 'LOADED: RELIANCE.NS [NSE]', time: getTime() },
-        { role: 'ai',  text: 'Valuation and momentum matrices verified. Awaiting deployment parameters.', time: getTime() },
+        { role: 'sys', text: 'READY: INPUT TICKER (e.g. RELIANCE) OR ASK THE COPILOT.', time: getTime() }
     ]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [sessionId] = useState(() => crypto.randomUUID());
     const logEndRef = useRef<HTMLDivElement>(null);
 
-    const chartData = buildPriceChart(MOCK_PRICES[timeframe]);
-    const isWatched = watchlist.includes('RELIANCE.NS');
+    // Dynamic metrics & price series based on activeItem or mock fallbacks
+    const activePrice = activeItem?.silver_state?.current_price ?? 2847.50;
+    const chartPrices = getPricesForChart(timeframe, activeItem?.silver_state?.current_price);
+    const chartData = buildPriceChart(chartPrices);
+    const isWatched = activeItem ? watchlist.includes(activeItem.ticker) : watchlist.includes('RELIANCE.NS');
 
-    const handleCommand = (e: React.FormEvent) => {
+    // Dynamic Display Metrics
+    const displayMetrics = activeItem ? [
+        { label: 'Current Price', value: `₹${activeItem.silver_state.current_price?.toFixed(2) || 'N/A'}` },
+        { label: 'Current Volume', value: activeItem.silver_state.current_volume?.toLocaleString() || 'N/A' },
+        { label: 'RSI (14)', value: activeItem.silver_state.rsi_14?.toFixed(2) || 'N/A' },
+        { label: 'ATR (14)', value: `₹${activeItem.silver_state.atr_14?.toFixed(2) || 'N/A'}` },
+        { label: 'SMA (20)', value: `₹${activeItem.silver_state.sma_20?.toFixed(2) || 'N/A'}` },
+        { label: 'SMA (50)', value: `₹${activeItem.silver_state.sma_50?.toFixed(2) || 'N/A'}` },
+    ] : BRONZE_DATA;
+
+    // Dynamic System Verdict
+    const verdictData = activeItem ? {
+        verdict: activeItem.gold_verdict.verdict,
+        score: (activeItem.gold_verdict.confidence_score / 10.0) || 0.0,
+        reason: activeItem.gold_verdict.primary_reason,
+        gates: Object.entries(activeItem.gold_verdict.gate_results || {}).map(([name, status]) => ({
+            name: name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            status: String(status)
+        })),
+        setup: activeItem.gold_verdict.trade_setup ? {
+            entry_low: activeItem.gold_verdict.trade_setup.entry_zone_low,
+            entry_high: activeItem.gold_verdict.trade_setup.entry_zone_high,
+            stop_loss: activeItem.gold_verdict.trade_setup.stop_loss,
+            target_1: activeItem.gold_verdict.trade_setup.target_1,
+            target_2: activeItem.gold_verdict.trade_setup.target_2,
+            rr_ratio: activeItem.gold_verdict.trade_setup.risk_reward_ratio,
+        } : null
+    } : VERDICT_DATA;
+
+    // Load active ledger history on mount
+    const fetchLedger = async () => {
+        if (!session) return;
+        try {
+            const { data, error } = await supabase
+                .from('algorithmic_ledger')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(20);
+            
+            if (error) throw error;
+            if (data && data.length > 0) {
+                setLedgerItems(data);
+                // Set the most recent one as active if nothing is selected
+                if (!activeItem) {
+                    setActiveItem(data[0]);
+                }
+            }
+        } catch (err) {
+            console.error('Error fetching algorithmic ledger:', err);
+        }
+    };
+
+    useEffect(() => {
+        fetchLedger();
+    }, [session]);
+
+    // Handle ticker analysis execution
+    const runAnalysis = async (rawTicker: string) => {
+        if (!session || !profile) return;
+        
+        let ticker = rawTicker.trim().toUpperCase();
+        if (!ticker.endsWith('.NS')) {
+            ticker += '.NS';
+        }
+
+        setIsProcessing(true);
+        setLog(prev => [
+            ...prev,
+            { role: 'sys', text: `SPAWNING QUANT PIPELINE INSTANCE FOR ${ticker}...`, time: getTime() }
+        ]);
+
+        try {
+            // Step-by-step logs simulating state nodes
+            setTimeout(() => {
+                setLog(prev => [...prev, { role: 'sys', text: `[STAGE 1]: Fetching Bronze telemetry for ${ticker}...`, time: getTime() }]);
+            }, 500);
+
+            setTimeout(() => {
+                setLog(prev => [...prev, { role: 'sys', text: `[STAGE 2]: Computing Silver vectorized metrics...`, time: getTime() }]);
+            }, 1200);
+
+            setTimeout(() => {
+                setLog(prev => [...prev, { role: 'sys', text: `[STAGE 3]: Testing Gold logic and hard gates...`, time: getTime() }]);
+            }, 2000);
+
+            const payload = {
+                ticker: ticker,
+                timeframe: profile.timeframe || 'swing',
+                user_profile: {
+                    risk_tolerance: profile.risk,
+                    experience_level: profile.experience,
+                    goal: profile.goal,
+                    available_capital: profile.capital
+                },
+                session_id: sessionId
+            };
+
+            const response = await fetch('http://localhost:8000/api/v1/analytics/process', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || 'Pipeline execution failed.');
+            }
+
+            const resData = await response.json();
+            
+            // Wait slightly to ensure background task has written to the DB ledger
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            // Query database ledger for the results
+            const { data, error } = await supabase
+                .from('algorithmic_ledger')
+                .select('*')
+                .eq('ticker', ticker)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (error) throw error;
+            
+            if (data && data.length > 0) {
+                setActiveItem(data[0]);
+                // Refresh full active list
+                fetchLedger();
+                
+                // Set log outputs from the LLM synthesis
+                const reasoning = resData.llm_analysis?.personalized_reasoning ?? [];
+                const finalSummary = reasoning.join(' ') || `Analysis complete. Verdict: ${resData.verdict}`;
+                
+                setLog(prev => [
+                    ...prev,
+                    { role: 'sys', text: `[STAGE 8]: Hybrid Ledger logged successfully.`, time: getTime() },
+                    { role: 'ai', text: finalSummary, time: getTime() }
+                ]);
+            } else {
+                throw new Error('Ledger record was not found after execution.');
+            }
+
+        } catch (err: any) {
+            setLog(prev => [
+                ...prev,
+                { role: 'sys', text: `[ERROR]: ${err.message || 'Verification failed.'}`, time: getTime() }
+            ]);
+        } finally {
+            setIsProcessing(false);
+            setTimeout(() => {
+                logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, 200);
+        }
+    };
+
+    // Chat command / message handler
+    const handleCommand = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!command.trim()) return;
-        const cmd = command;
+        if (!command.trim() || isProcessing) return;
+        const cmd = command.trim();
         setCommand('');
         setLog(prev => [...prev, { role: 'user', text: cmd, time: getTime() }]);
         setIsProcessing(true);
-        setTimeout(() => {
-            setLog(prev => [...prev, { role: 'sys', text: 'FETCHING BRONZE LAYER TELEMETRY... [OK]', time: getTime() }]);
-        }, 600);
-        setTimeout(() => {
-            setLog(prev => [...prev, { role: 'sys', text: 'EVALUATING GOLD LAYER HARD-GATES...', time: getTime() }]);
-        }, 1200);
-        setTimeout(() => {
-            setIsProcessing(false);
+
+        // Check if user is typing a direct analyze command
+        if (cmd.toUpperCase().startsWith('/ANALYZE ')) {
+            const tk = cmd.substring(9).trim();
+            if (tk) {
+                await runAnalysis(tk);
+                return;
+            }
+        }
+
+        try {
+            // Post to the Tutor stream
+            const response = await fetch('http://localhost:8000/api/v1/tutor/chat/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: JSON.stringify({
+                    message: cmd,
+                    session_id: sessionId,
+                    analysis_context: {
+                        silver: activeItem?.silver_state || {},
+                        gold: activeItem?.gold_verdict || {}
+                    },
+                    user_profile: {
+                        risk_tolerance: profile?.risk || 'moderate',
+                        experience_level: profile?.experience || 'intermediate',
+                        goal: profile?.goal || 'wealth_growth',
+                        available_capital: profile?.capital || 100000.0
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to stream response from Tutor.');
+            }
+
+            const reader = response.body?.getReader();
+            if (!reader) throw new Error('Stream reader unavailable.');
+
+            const decoder = new TextDecoder();
+            let aiText = '';
+
+            // Add the streaming message slot
+            setLog(prev => [...prev, { role: 'ai', text: '', time: getTime() }]);
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.slice(6).trim();
+                        if (dataStr === '[DONE]') break;
+                        try {
+                            const data = JSON.parse(dataStr);
+                            if (data.token) {
+                                aiText += data.token;
+                                setLog(prev => {
+                                    const next = [...prev];
+                                    if (next.length > 0) {
+                                        next[next.length - 1] = {
+                                            ...next[next.length - 1],
+                                            text: aiText
+                                        };
+                                    }
+                                    return next;
+                                });
+                            } else if (data.error) {
+                                throw new Error(data.error);
+                            }
+                        } catch (e) {
+                            // JSON parse error or similar
+                        }
+                    }
+                }
+            }
+
+        } catch (err: any) {
             setLog(prev => [
                 ...prev,
-                {
-                    role: 'ai',
-                    text: 'Analysis complete. The requested metric (P/E 28.4) is currently 14% below its 5-year historical median, validating the STRONG BUY setup. Risk parameters remain locked.',
-                    time: getTime(),
-                },
+                { role: 'sys', text: `[TUTOR ERROR]: ${err.message || 'Stream disrupted.'}`, time: getTime() }
             ]);
-            logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }, 2200);
+        } finally {
+            setIsProcessing(false);
+            setTimeout(() => {
+                logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, 200);
+        }
     };
 
     return (
@@ -233,7 +484,6 @@ export default function Workspace() {
             />
 
             {/* ── TOP NAVIGATION — §8: logo left, CTA right, scrim z-40, nav z-50 ── */}
-            {/* Scrim — fades in on scroll; always visible here since it's an app shell */}
             <div
                 className="fixed top-0 inset-x-0 h-20 z-40 pointer-events-none"
                 style={{
@@ -243,7 +493,6 @@ export default function Workspace() {
                 }}
             />
             <nav className="relative z-50 w-full px-2 flex items-center justify-between shrink-0 h-14">
-                {/* Logo — §8 exact: INVR + emerald dot */}
                 <div
                     onClick={() => navigate('/')}
                     className="font-bold text-2xl tracking-tighter text-white flex items-center cursor-pointer select-none"
@@ -251,8 +500,17 @@ export default function Workspace() {
                     INVR<span className="text-emerald-500">.</span>
                 </div>
 
-                {/* Search Explorer — glass.nested per §4 */}
-                <div className="flex-1 max-w-2xl mx-8 relative group">
+                {/* Search Explorer — glass.nested form */}
+                <form 
+                    onSubmit={(e) => {
+                        e.preventDefault();
+                        if (searchQuery.trim()) {
+                            runAnalysis(searchQuery);
+                            setSearchQuery('');
+                        }
+                    }}
+                    className="flex-1 max-w-2xl mx-8 relative group"
+                >
                     <div
                         className="absolute inset-0 rounded-[1rem] transition-colors duration-300 group-focus-within:bg-white/[0.04]"
                         style={glass.nested}
@@ -267,16 +525,29 @@ export default function Workspace() {
                             className="w-full bg-transparent border-none outline-none text-sm font-bold tracking-tighter text-white placeholder-white/30"
                         />
                         <div className="hidden md:flex px-2 py-1 rounded-[0.5rem] border border-white/10 text-[9px] font-bold tracking-[0.15em] text-white/40 uppercase bg-white/5">
-                            CTRL K
+                            ENTER
                         </div>
                     </div>
-                </div>
+                </form>
 
-                {/* Live status badge — §9 status/live badge recipe */}
-                <div className="hidden lg:flex items-center gap-2 px-4 py-2 rounded-full" style={glass.pill}>
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
-                    <span className="text-[11px] font-bold tracking-tighter text-emerald-400 uppercase">Live</span>
-                    <span className="text-[10px] font-bold tracking-[0.12em] text-white/40 uppercase">ID: 0x9A8F</span>
+                {/* Live status badge & logout button */}
+                <div className="hidden lg:flex items-center gap-3">
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full" style={glass.pill}>
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                        <span className="text-[11px] font-bold tracking-tighter text-emerald-400 uppercase">Live</span>
+                        <span className="text-[10px] font-bold tracking-[0.12em] text-white/40 uppercase">
+                          {profile?.experience ? `${profile.experience.toUpperCase()}` : 'USER'}
+                        </span>
+                    </div>
+                    <motion.button
+                        onClick={logout}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-4 py-2 rounded-full text-[10px] font-bold tracking-[0.15em] uppercase text-rose-400 hover:bg-rose-500/10 transition-colors"
+                        style={glass.pill}
+                    >
+                        Disconnect
+                    </motion.button>
                 </div>
             </nav>
 
@@ -287,60 +558,52 @@ export default function Workspace() {
                     PANE 1: ACTIVE LEDGER (left sidebar)
                 ═══════════════════════════════════════ */}
                 <div className="hidden lg:flex w-[260px] flex-col rounded-[2.5rem] overflow-hidden shrink-0" style={glass.base}>
-
-                    {/* §4.2 — Mandatory: this glass.base pane has nested children (the ledger items) ✓ */}
                     <div className="p-6 border-b border-white/10 shrink-0">
-                        {/* Eyebrow — no icon, typographic label only per §1 */}
                         <p className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40">Active Ledger</p>
                     </div>
 
                     <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-3">
-
-                        {/* Active item — §4.2 uses glass.pill accent, no icon-in-box */}
-                        <motion.div
-                            className="p-4 rounded-[1.25rem] flex justify-between items-center cursor-pointer relative overflow-hidden"
-                            style={{
-                                border: '1px solid rgba(16,185,129,0.35)',
-                                background: 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(13,148,136,0.04) 100%)',
-                                boxShadow: '0 0 20px rgba(16,185,129,0.12), inset 0 1px 0 rgba(255,255,255,0.18)',
-                            }}
-                            whileHover={{ scale: 1.01 }}
-                            transition={springSoft}
-                        >
-                            <div>
-                                <h4 className="text-lg font-bold tracking-tighter text-white">RELIANCE</h4>
-                                {/* §9 score/metric badge — glass.nested inside the active item */}
-                                <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-[0.875rem]" style={glass.nested}>
-                                    <span className="text-[10px] font-bold tracking-[0.15em] text-emerald-400 uppercase tabular-nums">
-                                        Score 7.8
-                                    </span>
-                                </div>
+                        {ledgerItems.length === 0 ? (
+                            <div className="p-4 text-center text-xs text-white/30 uppercase tracking-[0.1em]">
+                                No active predictions. Run search.
                             </div>
-                            {/* Idle ambient: pulsing emerald dot instead of icon per §6.2 */}
-                            <motion.div
-                                className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
-                                animate={{ scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }}
-                                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                            />
-                        </motion.div>
-
-                        {/* Inactive ledger items */}
-                        {watchlist.filter(t => t !== 'RELIANCE.NS').map(ticker => (
-                            <motion.div
-                                key={ticker}
-                                className="p-4 rounded-[1.25rem] flex justify-between items-center cursor-pointer group"
-                                style={glass.nested}
-                                whileHover={{ scale: 1.01 }}
-                                transition={springSoft}
-                            >
-                                <div>
-                                    <h4 className="text-lg font-bold tracking-tighter text-white/50 group-hover:text-white transition-colors">
-                                        {ticker.split('.')[0]}
-                                    </h4>
-                                    <span className="text-[9px] font-bold tracking-[0.15em] uppercase text-white/25">NSE</span>
-                                </div>
-                            </motion.div>
-                        ))}
+                        ) : (
+                            ledgerItems.map((item) => {
+                                const isSelected = activeItem?.log_id === item.log_id;
+                                return (
+                                    <motion.div
+                                        key={item.log_id}
+                                        onClick={() => setActiveItem(item)}
+                                        className="p-4 rounded-[1.25rem] flex justify-between items-center cursor-pointer relative overflow-hidden"
+                                        style={isSelected ? {
+                                            border: '1px solid rgba(16,185,129,0.35)',
+                                            background: 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(13,148,136,0.04) 100%)',
+                                            boxShadow: '0 0 20px rgba(16,185,129,0.12), inset 0 1px 0 rgba(255,255,255,0.18)',
+                                        } : glass.nested}
+                                        whileHover={{ scale: 1.01 }}
+                                        transition={springSoft}
+                                    >
+                                        <div>
+                                            <h4 className={`text-lg font-bold tracking-tighter ${isSelected ? 'text-white' : 'text-white/50 hover:text-white transition-colors'}`}>
+                                                {item.ticker.split('.')[0]}
+                                            </h4>
+                                            <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-[0.875rem]" style={glass.nested}>
+                                                <span className="text-[10px] font-bold tracking-[0.15em] text-emerald-400 uppercase tabular-nums">
+                                                    {(item.gold_verdict.confidence_score / 10.0)?.toFixed(1) || '0.0'} Score
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {isSelected && (
+                                            <motion.div
+                                                className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
+                                                animate={{ scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }}
+                                                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                                            />
+                                        )}
+                                    </motion.div>
+                                );
+                            })
+                        )}
                     </div>
                 </div>
 
@@ -349,28 +612,25 @@ export default function Workspace() {
                 ═══════════════════════════════════════ */}
                 <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-4">
 
-                    {/* TOP: Primary Chart Card — glass.base with three nested tiers inside */}
+                    {/* TOP: Primary Chart Card */}
                     <div className="rounded-[2.5rem] p-8 flex flex-col gap-6 shrink-0 relative overflow-hidden" style={glass.base}>
-
-                        {/* Header — §8 asymmetric layout */}
                         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-10">
                             <div>
                                 <div className="flex items-center gap-4 mb-2">
-                                    {/* §6.2 idle float on ticker headline */}
                                     <motion.h1
                                         className="text-5xl md:text-[4rem] font-bold tracking-tighter text-white leading-none"
                                         animate={{ y: [0, -3, 0] }}
                                         transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
                                     >
-                                        RELIANCE
+                                        {activeItem?.ticker?.split('.')[0] ?? 'RELIANCE'}
                                     </motion.h1>
-                                    {/* Watch button — glass.pill secondary button per §9 */}
                                     <motion.button
-                                        onClick={() =>
+                                        onClick={() => {
+                                            const activeTicker = activeItem?.ticker ?? 'RELIANCE.NS';
                                             isWatched
-                                                ? setWatchlist(watchlist.filter(t => t !== 'RELIANCE.NS'))
-                                                : setWatchlist([...watchlist, 'RELIANCE.NS'])
-                                        }
+                                                ? setWatchlist(watchlist.filter(t => t !== activeTicker))
+                                                : setWatchlist([...watchlist, activeTicker]);
+                                        }}
                                         whileHover={{ scale: 1.03 }}
                                         whileTap={{ scale: 0.97 }}
                                         transition={springPress}
@@ -384,26 +644,24 @@ export default function Workspace() {
                                     </motion.button>
                                 </div>
                                 <p className="text-white/50 font-bold tracking-tighter text-lg">
-                                    Reliance Industries Ltd • NSE
+                                    {activeItem ? `${activeItem.ticker} • ${activeItem.timeframe.toUpperCase()}` : 'Reliance Industries Ltd • NSE'}
                                 </p>
                             </div>
 
                             <div className="flex flex-col md:items-end">
-                                {/* §9 score/metric badge — glass.nested for price */}
                                 <div className="inline-flex flex-col items-end gap-1">
                                     <span className="text-4xl md:text-5xl font-bold tracking-tighter tabular-nums text-white">
-                                        ₹2,847.50
+                                        ₹{activePrice.toFixed(2)}
                                     </span>
                                     <span className="text-sm font-bold tracking-tighter text-emerald-400">
-                                        +₹65.20 (+2.34%)
+                                        +2.34%
                                     </span>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Chart panel — glass.nested per §9 data chart panel recipe */}
+                        {/* Chart panel */}
                         <div className="rounded-[1.5rem] p-6 relative" style={glass.nested}>
-                            {/* Header row: label left, value right — §9 chart panel recipe */}
                             <div className="flex justify-between items-center mb-6">
                                 <div className="flex gap-1 p-1 rounded-[1.25rem]" style={glass.pill}>
                                     {(['1W', '1M', '6M', '1Y'] as const).map((tf) => (
@@ -431,7 +689,7 @@ export default function Workspace() {
                                 </span>
                             </div>
 
-                            {/* Chart — built from real data through Catmull-Rom per §7 */}
+                            {/* Chart */}
                             <div className="h-[200px] w-full relative">
                                 <AnimatePresence mode="wait">
                                     <motion.svg
@@ -450,13 +708,11 @@ export default function Workspace() {
                                                 <stop offset="100%" stopColor="#10B981" />
                                             </linearGradient>
                                             <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                                                {/* §7: top ~0.20, bottom 0 */}
                                                 <stop offset="0%" stopColor="#10B981" stopOpacity="0.20" />
                                                 <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
                                             </linearGradient>
                                         </defs>
 
-                                        {/* §7: 2–3 ultra-faint reference lines, not a data grid */}
                                         {[0.25, 0.5, 0.75].map((f) => (
                                             <line
                                                 key={f}
@@ -481,7 +737,6 @@ export default function Workspace() {
                                     </motion.svg>
                                 </AnimatePresence>
 
-                                {/* Live marker — positioned from actual last data coordinate per §7 */}
                                 <motion.div
                                     style={{
                                         left: `${(chartData.last.x / CHART_W) * 100}%`,
@@ -500,7 +755,6 @@ export default function Workspace() {
                                 </motion.div>
                             </div>
 
-                            {/* Axis tick labels per §9 chart panel recipe */}
                             <div className="flex justify-between mt-3">
                                 {(['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'] as const).map((m) => (
                                     <span key={m} className="text-[9px] font-bold tracking-[0.1em] text-white/25 uppercase">
@@ -514,31 +768,25 @@ export default function Workspace() {
                     {/* BOTTOM: Data matrices row */}
                     <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 shrink-0 pb-4">
 
-                        {/* GOLD VERDICT CARD (3 cols) — glass.base with two nested children ✓ §4.2 */}
+                        {/* GOLD VERDICT CARD (3 cols) */}
                         <div className="xl:col-span-3 rounded-[2.5rem] p-8 flex flex-col relative overflow-hidden" style={glass.base}>
-
-                            {/* Left accent stripe — purposeful structural element (verdict severity indicator) */}
                             <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-gradient-to-b from-emerald-400 to-teal-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
 
-                            {/* §9 narrative card structure — eyebrow → headline → body, no icon in box */}
                             <div className="ml-5">
-                                {/* Eyebrow — typographic, no icon per §1 */}
                                 <p className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-1.5">
                                     Gold Layer · System Verdict
                                 </p>
 
-                                {/* Headline with score badge (glass.nested) alongside */}
                                 <div className="flex items-center gap-4 mb-4">
                                     <h3 className="text-2xl font-bold tracking-tighter text-white">
-                                        {VERDICT_DATA.verdict}
+                                        {verdictData.verdict}
                                     </h3>
-                                    {/* §9 score/metric badge */}
                                     <div
                                         className="flex flex-col items-center justify-center px-4 py-2 rounded-[1.25rem]"
                                         style={glass.nested}
                                     >
                                         <span className="font-bold tracking-tighter text-xl text-white tabular-nums leading-none">
-                                            {VERDICT_DATA.score}
+                                            {verdictData.score.toFixed(1)}
                                         </span>
                                         <span className="text-[9px] font-bold tracking-[0.15em] text-emerald-400 uppercase mt-1">
                                             Score
@@ -546,9 +794,8 @@ export default function Workspace() {
                                     </div>
                                 </div>
 
-                                {/* Body — §5: text-white/55, font-bold, tracking-tighter */}
                                 <p className="text-white/55 font-bold tracking-tighter text-base leading-relaxed mb-6 max-w-xl">
-                                    {VERDICT_DATA.reason}
+                                    {verdictData.reason}
                                 </p>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -557,7 +804,7 @@ export default function Workspace() {
                                         <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
                                             Hard Gates Cleared
                                         </h4>
-                                        {VERDICT_DATA.gates.map((g, i) => (
+                                        {verdictData.gates.map((g, i) => (
                                             <div key={i} className="flex justify-between items-center py-2 border-b border-white/5">
                                                 <span className="text-sm font-bold tracking-tighter text-white/70">{g.name}</span>
                                                 <span className="text-[10px] font-bold tracking-[0.15em] text-emerald-400 uppercase">{g.status}</span>
@@ -565,38 +812,39 @@ export default function Workspace() {
                                         ))}
                                     </div>
 
-                                    {/* Trade setup — §9 verdict/insight panel with gradient top divider */}
-                                    <div className="rounded-[1.5rem] p-5 relative overflow-hidden" style={glass.nested}>
-                                        <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
-                                        <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-3 mt-1">
-                                            Trade Architecture
-                                        </h4>
-                                        {[
-                                            { label: 'Entry Zone',  val: `₹${VERDICT_DATA.setup.entry_low} – ${VERDICT_DATA.setup.entry_high}`, cls: 'text-white' },
-                                            { label: 'Stop Loss',   val: `₹${VERDICT_DATA.setup.stop_loss}`, cls: 'text-red-400' },
-                                            { label: 'Targets',     val: `₹${VERDICT_DATA.setup.target_1} / ${VERDICT_DATA.setup.target_2}`, cls: 'text-emerald-400' },
-                                            { label: 'R/R Ratio',   val: `${VERDICT_DATA.setup.rr_ratio}×`, cls: 'text-white/70' },
-                                        ].map(({ label, val, cls }) => (
-                                            <div key={label} className="flex justify-between items-center py-1.5">
-                                                <span className="text-sm font-bold tracking-tighter text-white/55">{label}</span>
-                                                <span className={`text-sm font-bold tracking-tighter tabular-nums ${cls}`}>{val}</span>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    {/* Trade setup */}
+                                    {verdictData.setup && (
+                                        <div className="rounded-[1.5rem] p-5 relative overflow-hidden" style={glass.nested}>
+                                            <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
+                                            <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-3 mt-1">
+                                                Trade Architecture
+                                            </h4>
+                                            {[
+                                                { label: 'Entry Zone',  val: `₹${verdictData.setup.entry_low} – ${verdictData.setup.entry_high}`, cls: 'text-white' },
+                                                { label: 'Stop Loss',   val: `₹${verdictData.setup.stop_loss}`, cls: 'text-red-400' },
+                                                { label: 'Targets',     val: `₹${verdictData.setup.target_1} / ${verdictData.setup.target_2}`, cls: 'text-emerald-400' },
+                                                { label: 'R/R Ratio',   val: `${verdictData.setup.rr_ratio}×`, cls: 'text-white/70' },
+                                            ].map(({ label, val, cls }) => (
+                                                <div key={label} className="flex justify-between items-center py-1.5">
+                                                    <span className="text-sm font-bold tracking-tighter text-white/55">{label}</span>
+                                                    <span className={`text-sm font-bold tracking-tighter tabular-nums ${cls}`}>{val}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
 
-                        {/* BRONZE DATA GRID (2 cols) — glass.base with nested metric items ✓ §4.2 */}
+                        {/* BRONZE DATA GRID (2 cols) */}
                         <div className="xl:col-span-2 rounded-[2.5rem] p-8 flex flex-col" style={glass.base}>
-                            {/* §1: no icon-in-box header — typographic eyebrow only */}
                             <div className="mb-5 border-b border-white/10 pb-4">
                                 <p className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40">
                                     Bronze Layer · Raw Ingestion
                                 </p>
                             </div>
                             <div className="grid grid-cols-2 gap-3 flex-1 content-start">
-                                {BRONZE_DATA.map((data, i) => (
+                                {displayMetrics.map((data, i) => (
                                     <div key={i} className="flex flex-col p-4 rounded-[1.25rem]" style={glass.nested}>
                                         <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
                                             {data.label}
@@ -615,11 +863,8 @@ export default function Workspace() {
                     PANE 3: EXECUTION LOG (right)
                 ═══════════════════════════════════════ */}
                 <div className="w-[400px] rounded-[2.5rem] flex flex-col shrink-0 relative overflow-hidden" style={glass.base}>
-
-                    {/* Terminal header — §1: no icon-in-box; typographic + status badge */}
                     <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
                         <div>
-                            {/* Eyebrow eyebrow pattern — wide-tracked micro-caption */}
                             <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-emerald-400 mb-1">
                                 Execution Log
                             </p>
@@ -627,7 +872,6 @@ export default function Workspace() {
                                 Quant Copilot
                             </h3>
                         </div>
-                        {/* §9 status/live badge — pulsing dot + label */}
                         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={glass.nested}>
                             <motion.div
                                 className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
@@ -681,7 +925,7 @@ export default function Workspace() {
                         <div ref={logEndRef} />
                     </div>
 
-                    {/* Command input — glass.nested form per §4 */}
+                    {/* Command input */}
                     <div className="p-4 border-t border-white/10 shrink-0 bg-black/40">
                         <form onSubmit={handleCommand} className="relative flex items-center rounded-[1.25rem] p-1" style={glass.nested}>
                             <CornerDownRight className="absolute left-4 w-4 h-4 text-white/30" />
@@ -689,8 +933,9 @@ export default function Workspace() {
                                 type="text"
                                 value={command}
                                 onChange={(e) => setCommand(e.target.value)}
-                                placeholder="Enter query parameters..."
-                                className="w-full bg-transparent border-none py-4 pl-12 pr-4 outline-none text-sm font-mono text-white placeholder-white/30"
+                                placeholder={isProcessing ? 'Waiting for engine...' : 'Enter query parameters or /analyze TICKER...'}
+                                disabled={isProcessing}
+                                className="w-full bg-transparent border-none py-4 pl-12 pr-4 outline-none text-sm font-mono text-white placeholder-white/30 disabled:opacity-50"
                             />
                         </form>
                     </div>

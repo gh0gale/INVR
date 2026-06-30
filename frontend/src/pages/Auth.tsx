@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { ArrowRight, X } from 'lucide-react';
+import { supabase } from '../supabase';
+import { useAuth } from '../context/AuthContext';
 
 // ==========================================
 // 1. EXACT GLASS STYLE SYSTEM (From .md)
@@ -47,7 +49,7 @@ const springSoft = { type: 'spring', stiffness: 220, damping: 28, mass: 0.9 } as
 // 2. THREE.JS: Continuous Market Data Stream
 // ==========================================
 function DataPoints() {
-    const pointsRef = useRef<any>();
+    const pointsRef = useRef<any>(null);
     const count = 2500;
 
     const positions = new Float32Array(count * 3);
@@ -67,7 +69,7 @@ function DataPoints() {
     return (
         <points ref={pointsRef}>
             <bufferGeometry>
-                <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
+                <bufferAttribute attach="attributes-position" args={[positions, 3]} />
             </bufferGeometry>
             <pointsMaterial size={0.045} color="#10B981" transparent opacity={0.8} sizeAttenuation />
         </points>
@@ -132,13 +134,55 @@ function CryptographicCore() {
 // ==========================================
 export default function Auth() {
     const navigate = useNavigate();
+    const { fetchProfile } = useAuth();
     const [mode, setMode] = useState<'login' | 'register'>('login');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-    const handleAuth = (e: React.FormEvent) => {
+    const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
-        navigate('/onboarding');
+        setLoading(true);
+        setErrorMsg(null);
+        try {
+            if (mode === 'register') {
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                });
+                if (error) throw error;
+                if (data.session) {
+                    const profile = await fetchProfile(data.session.access_token);
+                    if (profile) {
+                        navigate('/workspace');
+                    } else {
+                        navigate('/onboarding');
+                    }
+                } else {
+                    setErrorMsg("Verification email sent or account initialized. Please sign in.");
+                    setMode('login');
+                }
+            } else {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email,
+                    password,
+                });
+                if (error) throw error;
+                if (data.session) {
+                    const profile = await fetchProfile(data.session.access_token);
+                    if (profile) {
+                        navigate('/workspace');
+                    } else {
+                        navigate('/onboarding');
+                    }
+                }
+            }
+        } catch (err: any) {
+            setErrorMsg(err.message || 'Authentication failed. Please check your credentials.');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -297,6 +341,17 @@ export default function Auth() {
                                 </div>
                             </div>
 
+                            {errorMsg && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    style={glass.nested}
+                                    className="p-4 rounded-[1.25rem] text-rose-400 text-sm font-bold tracking-tighter"
+                                >
+                                    {errorMsg}
+                                </motion.div>
+                            )}
+
                             {/* Forgot Password Link */}
                             <AnimatePresence>
                                 {mode === 'login' && (
@@ -317,9 +372,10 @@ export default function Auth() {
                             <div className="mt-2">
                                 <motion.button
                                     type="submit"
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
-                                    animate={{
+                                    disabled={loading}
+                                    whileHover={{ scale: loading ? 1 : 1.02 }}
+                                    whileTap={{ scale: loading ? 1 : 0.98 }}
+                                    animate={loading ? {} : {
                                         boxShadow: [
                                             '0 0 20px rgba(255,255,255,0.1)',
                                             '0 0 35px rgba(255,255,255,0.2)',
@@ -330,9 +386,9 @@ export default function Auth() {
                                         scale: springPress,
                                         boxShadow: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
                                     }}
-                                    className="w-full py-5 rounded-[1.25rem] bg-white text-black font-bold tracking-tighter flex items-center justify-center gap-3 hover:bg-gray-100 transition-colors"
+                                    className="w-full py-5 rounded-[1.25rem] bg-white text-black font-bold tracking-tighter flex items-center justify-center gap-3 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    {mode === 'login' ? 'Grant Access' : 'Establish Identity'}
+                                    {loading ? 'Processing...' : (mode === 'login' ? 'Grant Access' : 'Establish Identity')}
                                     <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
                                 </motion.button>
                             </div>

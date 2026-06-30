@@ -2,6 +2,8 @@ import React, { useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, useSpring, useTransform } from 'framer-motion';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { ArrowRight, ArrowLeft, Plus, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 // --- 1. DESIGN SYSTEM TOKENS & PHYSICS ---
 // Exact three-tier glass system per §4. Alpha values are final — do not increase.
@@ -71,7 +73,7 @@ function Starfield() {
     return (
         <points ref={pointsRef}>
             <bufferGeometry>
-                <bufferAttribute attach="attributes-position" count={2500} array={particles} itemSize={3} />
+                <bufferAttribute attach="attributes-position" args={[particles, 3]} />
             </bufferGeometry>
             <pointsMaterial size={0.045} color="#10B981" transparent opacity={0.8} />
         </points>
@@ -167,7 +169,7 @@ const QUESTIONS = [
         eyebrow: 'System Variable 02',
         headline: 'Primary Goal.',
         subhead: 'Optimizes strategy targeting.',
-        options: ['Wealth Growth', 'Dividend Income', 'Diversification'],
+        options: ['Wealth Growth', 'Dividend Income', 'Capital Preservation'],
         type: 'choice',
     },
     {
@@ -207,7 +209,11 @@ type QuestionId = typeof QUESTIONS[number]['id'];
 // --- 5. MAIN PAGE ---
 
 export default function ConfigurationPage() {
+    const navigate = useNavigate();
+    const { session, setProfileState } = useAuth();
     const [step, setStep] = useState(0);
+    const [loading, setLoading] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
     const [formData, setFormData] = useState<{
         experience: string;
         goal: string;
@@ -263,15 +269,61 @@ export default function ConfigurationPage() {
         return false;
     };
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (step < QUESTIONS.length - 1) {
             setStep(s => s + 1);
         } else {
+            if (!session) {
+                setSubmitError("No active session. Please log in again.");
+                return;
+            }
+            setLoading(true);
+            setSubmitError(null);
+
             const finalPortfolio = formData.portfolio.reduce((acc, curr) => {
-                acc[curr.name] = Number(curr.value);
+                acc[curr.name] = Number(curr.value) / 100.0;
                 return acc;
             }, {} as Record<string, number>);
-            console.log('Final Payload Ready:', { ...formData, portfolio: finalPortfolio });
+
+            const goalMapped = formData.goal === 'Wealth Growth' ? 'wealth_growth' 
+                : formData.goal === 'Dividend Income' ? 'dividend_income' 
+                : 'capital_preservation';
+
+            const styleMapped = formData.style === 'Long-term' ? 'long_term' : formData.style.toLowerCase();
+
+            const payload = {
+                experience: formData.experience.toLowerCase(),
+                goal: goalMapped,
+                timeframe: styleMapped,
+                risk: formData.risk.toLowerCase(),
+                portfolio: finalPortfolio,
+                capital: parseFloat(formData.capital)
+            };
+
+            try {
+                const response = await fetch('http://localhost:8000/api/v1/profiles/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session.access_token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.detail || 'Failed to submit profile calibration.');
+                }
+
+                const responseData = await response.json();
+                setProfileState(responseData);
+                navigate('/workspace');
+            } catch (err: any) {
+                console.error(err);
+                setSubmitError(err.message || 'An error occurred during submission.');
+            } finally {
+                setLoading(false);
+            }
         }
     };
 
@@ -606,6 +658,17 @@ export default function ConfigurationPage() {
 
                                 </motion.div>
                             </AnimatePresence>
+
+                            {submitError && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    style={glass.nested}
+                                    className="mt-4 p-4 rounded-[1.25rem] text-rose-400 text-sm font-bold tracking-tighter"
+                                >
+                                    {submitError}
+                                </motion.div>
+                            )}
                         </div>
                     </div>
 
@@ -646,12 +709,12 @@ export default function ConfigurationPage() {
 
                         {/* Confirm — Primary CTA per §9 */}
                         <motion.button
-                            disabled={!isStepComplete()}
+                            disabled={!isStepComplete() || loading}
                             onClick={handleNext}
-                            whileHover={{ scale: isStepComplete() ? 1.03 : 1 }}
-                            whileTap={{ scale: isStepComplete() ? 0.97 : 1 }}
+                            whileHover={{ scale: (isStepComplete() && !loading) ? 1.03 : 1 }}
+                            whileTap={{ scale: (isStepComplete() && !loading) ? 0.97 : 1 }}
                             animate={
-                                isStepComplete()
+                                (isStepComplete() && !loading)
                                     ? {
                                           boxShadow: [
                                               '0 0 10px rgba(16,185,129,0.4)',
@@ -666,12 +729,12 @@ export default function ConfigurationPage() {
                                 boxShadow: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
                             }}
                             className={`flex items-center gap-3 px-8 py-4 rounded-[1.25rem] text-[12px] uppercase tracking-[0.15em] font-bold transition-all duration-300 ${
-                                isStepComplete()
+                                (isStepComplete() && !loading)
                                     ? 'bg-white text-black cursor-pointer'
                                     : 'bg-white/5 text-white/20 border border-white/10 cursor-not-allowed'
                             }`}
                         >
-                            {step === QUESTIONS.length - 1 ? 'Finalize Calibration' : 'Confirm & Proceed'}
+                            {loading ? 'Vectorizing...' : (step === QUESTIONS.length - 1 ? 'Finalize Calibration' : 'Confirm & Proceed')}
                             <ArrowRight size={16} />
                         </motion.button>
                     </div>
