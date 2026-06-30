@@ -132,7 +132,7 @@ function CryptographicCore() {
 // ==========================================
 // 4. MAIN AUTH COMPONENT
 // ==========================================
-export default function Auth() {
+function AuthForm() {
     const navigate = useNavigate();
     const { fetchProfile } = useAuth();
     const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -184,6 +184,141 @@ export default function Auth() {
             setLoading(false);
         }
     };
+
+    return (
+        <div className="flex-1 flex flex-col p-10 md:p-14 relative z-10">
+            {/* Header */}
+            <div className="mb-10">
+                <h2 className="text-4xl font-bold tracking-tighter text-white mb-2">
+                    Authenticate.
+                </h2>
+                <p className="text-white/50 font-bold tracking-tighter text-sm leading-relaxed">
+                    Establish your local portfolio state.
+                </p>
+            </div>
+
+            {/* Tab Switcher */}
+            <div className="flex gap-1 p-1.5 mb-8 rounded-[1.25rem] w-full" style={glass.pill}>
+                {['login', 'register'].map((tab) => {
+                    const isActive = mode === tab;
+                    return (
+                        <button
+                            key={tab}
+                            type="button"
+                            onClick={() => setMode(tab as 'login' | 'register')}
+                            className={`relative flex-1 py-3 text-[12px] font-bold tracking-widest uppercase transition-colors rounded-[1rem] z-10 ${isActive ? 'text-white' : 'text-white/40 hover:text-white/80'}`}
+                        >
+                            {isActive && (
+                                <motion.div
+                                    layoutId="auth-tab-pill"
+                                    className="absolute inset-0 rounded-[1rem] bg-white/[0.07]"
+                                    style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)' }}
+                                    transition={springSoft}
+                                />
+                            )}
+                            <span className="relative z-10">{tab === 'login' ? 'Sign In' : 'Initialize'}</span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            {/* Form Engine */}
+            <form onSubmit={handleAuth} className="flex flex-col gap-6 flex-1 justify-center">
+                <div className="flex flex-col gap-4">
+                    {/* Email Field */}
+                    <div
+                        className="relative rounded-[1.25rem] overflow-hidden group transition-colors duration-300"
+                        style={glass.nested}
+                    >
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="Identification (Email)"
+                            required
+                            className="w-full bg-transparent px-6 py-5 outline-none text-white font-bold tracking-tighter placeholder-white/20 relative z-10"
+                        />
+                        <div className="absolute bottom-0 left-0 w-full h-[2px] bg-emerald-500/0 group-focus-within:bg-emerald-500/60 shadow-[0_0_10px_rgba(16,185,129,0)] group-focus-within:shadow-[0_0_15px_rgba(16,185,129,0.8)] transition-all duration-300" />
+                    </div>
+
+                    {/* Password Field */}
+                    <div
+                        className="relative rounded-[1.25rem] overflow-hidden group transition-colors duration-300"
+                        style={glass.nested}
+                    >
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Cryptographic Key (Password)"
+                            required
+                            className="w-full bg-transparent px-6 py-5 outline-none text-white font-bold tracking-tighter placeholder-white/20 relative z-10"
+                        />
+                        <div className="absolute bottom-0 left-0 w-full h-[2px] bg-emerald-500/0 group-focus-within:bg-emerald-500/60 shadow-[0_0_10px_rgba(16,185,129,0)] group-focus-within:shadow-[0_0_15px_rgba(16,185,129,0.8)] transition-all duration-300" />
+                    </div>
+                </div>
+
+                {errorMsg && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        style={glass.nested}
+                        className="p-4 rounded-[1.25rem] text-rose-400 text-sm font-bold tracking-tighter"
+                    >
+                        {errorMsg}
+                    </motion.div>
+                )}
+
+                {/* Forgot Password Link */}
+                <AnimatePresence>
+                    {mode === 'login' && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="self-end overflow-hidden"
+                        >
+                            <button type="button" className="text-[11px] font-bold tracking-[0.18em] uppercase text-white/40 hover:text-emerald-400 transition-colors mt-2">
+                                Recover Key?
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Action Button */}
+                <div className="mt-2">
+                    <motion.button
+                        type="submit"
+                        disabled={loading}
+                        whileHover={{ scale: loading ? 1 : 1.02 }}
+                        whileTap={{ scale: loading ? 1 : 0.98 }}
+                        animate={loading ? {} : {
+                            boxShadow: [
+                                '0 0 20px rgba(255,255,255,0.1)',
+                                '0 0 35px rgba(255,255,255,0.2)',
+                                '0 0 20px rgba(255,255,255,0.1)',
+                            ],
+                        }}
+                        transition={{
+                            scale: springPress,
+                            boxShadow: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
+                        }}
+                        className="w-full py-5 rounded-[1.25rem] bg-white text-black font-bold tracking-tighter flex items-center justify-center gap-3 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {loading ? 'Processing...' : (mode === 'login' ? 'Grant Access' : 'Establish Identity')}
+                        <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
+                    </motion.button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+// ==========================================
+// 4. MAIN AUTH COMPONENT
+// ==========================================
+export default function Auth() {
+    const navigate = useNavigate();
 
     return (
         <div className="relative w-full min-h-screen bg-[#030508] text-white overflow-hidden font-sans flex flex-col perspective-1000">
@@ -269,131 +404,7 @@ export default function Auth() {
                     </div>
 
                     {/* RIGHT PANE: Pure Auth Form */}
-                    <div className="flex-1 flex flex-col p-10 md:p-14 relative z-10">
-                        {/* Header */}
-                        <div className="mb-10">
-                            <h2 className="text-4xl font-bold tracking-tighter text-white mb-2">
-                                Authenticate.
-                            </h2>
-                            <p className="text-white/50 font-bold tracking-tighter text-sm leading-relaxed">
-                                Establish your local portfolio state.
-                            </p>
-                        </div>
-
-                        {/* Tab Switcher */}
-                        <div className="flex gap-1 p-1.5 mb-8 rounded-[1.25rem] w-full" style={glass.pill}>
-                            {['login', 'register'].map((tab) => {
-                                const isActive = mode === tab;
-                                return (
-                                    <button
-                                        key={tab}
-                                        type="button"
-                                        onClick={() => setMode(tab as 'login' | 'register')}
-                                        className={`relative flex-1 py-3 text-[12px] font-bold tracking-widest uppercase transition-colors rounded-[1rem] z-10 ${isActive ? 'text-white' : 'text-white/40 hover:text-white/80'}`}
-                                    >
-                                        {isActive && (
-                                            <motion.div
-                                                layoutId="auth-tab-pill"
-                                                className="absolute inset-0 rounded-[1rem] bg-white/[0.07]"
-                                                style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)' }}
-                                                transition={springSoft}
-                                            />
-                                        )}
-                                        <span className="relative z-10">{tab === 'login' ? 'Sign In' : 'Initialize'}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-
-                        {/* Form Engine */}
-                        <form onSubmit={handleAuth} className="flex flex-col gap-6 flex-1 justify-center">
-                            <div className="flex flex-col gap-4">
-                                {/* Email Field */}
-                                <div
-                                    className="relative rounded-[1.25rem] overflow-hidden group transition-colors duration-300"
-                                    style={glass.nested}
-                                >
-                                    <input
-                                        type="email"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="Identification (Email)"
-                                        required
-                                        className="w-full bg-transparent px-6 py-5 outline-none text-white font-bold tracking-tighter placeholder-white/20 relative z-10"
-                                    />
-                                    <div className="absolute bottom-0 left-0 w-full h-[2px] bg-emerald-500/0 group-focus-within:bg-emerald-500/60 shadow-[0_0_10px_rgba(16,185,129,0)] group-focus-within:shadow-[0_0_15px_rgba(16,185,129,0.8)] transition-all duration-300" />
-                                </div>
-
-                                {/* Password Field */}
-                                <div
-                                    className="relative rounded-[1.25rem] overflow-hidden group transition-colors duration-300"
-                                    style={glass.nested}
-                                >
-                                    <input
-                                        type="password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="Cryptographic Key (Password)"
-                                        required
-                                        className="w-full bg-transparent px-6 py-5 outline-none text-white font-bold tracking-tighter placeholder-white/20 relative z-10"
-                                    />
-                                    <div className="absolute bottom-0 left-0 w-full h-[2px] bg-emerald-500/0 group-focus-within:bg-emerald-500/60 shadow-[0_0_10px_rgba(16,185,129,0)] group-focus-within:shadow-[0_0_15px_rgba(16,185,129,0.8)] transition-all duration-300" />
-                                </div>
-                            </div>
-
-                            {errorMsg && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: -10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    style={glass.nested}
-                                    className="p-4 rounded-[1.25rem] text-rose-400 text-sm font-bold tracking-tighter"
-                                >
-                                    {errorMsg}
-                                </motion.div>
-                            )}
-
-                            {/* Forgot Password Link */}
-                            <AnimatePresence>
-                                {mode === 'login' && (
-                                    <motion.div
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: 'auto' }}
-                                        exit={{ opacity: 0, height: 0 }}
-                                        className="self-end overflow-hidden"
-                                    >
-                                        <button type="button" className="text-[11px] font-bold tracking-[0.18em] uppercase text-white/40 hover:text-emerald-400 transition-colors mt-2">
-                                            Recover Key?
-                                        </button>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-
-                            {/* Action Button */}
-                            <div className="mt-2">
-                                <motion.button
-                                    type="submit"
-                                    disabled={loading}
-                                    whileHover={{ scale: loading ? 1 : 1.02 }}
-                                    whileTap={{ scale: loading ? 1 : 0.98 }}
-                                    animate={loading ? {} : {
-                                        boxShadow: [
-                                            '0 0 20px rgba(255,255,255,0.1)',
-                                            '0 0 35px rgba(255,255,255,0.2)',
-                                            '0 0 20px rgba(255,255,255,0.1)',
-                                        ],
-                                    }}
-                                    transition={{
-                                        scale: springPress,
-                                        boxShadow: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
-                                    }}
-                                    className="w-full py-5 rounded-[1.25rem] bg-white text-black font-bold tracking-tighter flex items-center justify-center gap-3 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {loading ? 'Processing...' : (mode === 'login' ? 'Grant Access' : 'Establish Identity')}
-                                    <ArrowRight className="w-4 h-4" strokeWidth={2.5} />
-                                </motion.button>
-                            </div>
-                        </form>
-                    </div>
+                    <AuthForm />
                 </motion.div>
             </div>
         </div>

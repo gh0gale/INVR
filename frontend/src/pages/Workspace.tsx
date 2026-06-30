@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Search, Plus, BookmarkCheck, CornerDownRight } from 'lucide-react';
+import { Search, Plus, BookmarkCheck, CornerDownRight, Trash2, Menu, List } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../supabase';
 
@@ -139,6 +139,10 @@ export default function Workspace() {
     const { session, profile, logout } = useAuth();
     const [timeframe, setTimeframe] = useState<'1W' | '1M' | '6M' | '1Y'>('6M');
     
+    // Sidebar state
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [sidebarTab, setSidebarTab] = useState<'ledger' | 'watchlist'>('ledger');
+
     // Watchlist state (tickers user has bookmarked)
     const [watchlist, setWatchlist] = useState<string[]>(['RELIANCE.NS', 'TCS.NS', 'INFY.NS']);
     const [searchQuery, setSearchQuery] = useState('');
@@ -226,6 +230,19 @@ export default function Workspace() {
     useEffect(() => {
         fetchLedger();
     }, [session]);
+
+    const deleteLedgerItem = async (e: React.MouseEvent, logId: string) => {
+        e.stopPropagation();
+        try {
+            await supabase.from('algorithmic_ledger').delete().eq('log_id', logId);
+            setLedgerItems(prev => prev.filter(item => item.log_id !== logId));
+            if (activeItem?.log_id === logId) {
+                setActiveItem(null);
+            }
+        } catch (err) {
+            console.error('Error deleting ledger item:', err);
+        }
+    };
 
     // Handle ticker analysis execution
     const runAnalysis = async (rawTicker: string) => {
@@ -523,12 +540,20 @@ export default function Workspace() {
                     background: 'linear-gradient(180deg, rgba(3,5,8,0.80) 0%, rgba(3,5,8,0) 100%)',
                 }}
             />
-            <nav className="relative z-50 w-full px-2 flex items-center justify-between shrink-0 h-14">
-                <div
-                    onClick={() => navigate('/')}
-                    className="font-bold text-2xl tracking-tighter text-white flex items-center cursor-pointer select-none"
-                >
-                    INVR<span className="text-emerald-500">.</span>
+            <nav className="relative z-50 w-full px-2 flex items-center justify-between shrink-0 h-14 gap-4">
+                <div className="flex items-center gap-4">
+                    <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                        className={`p-2.5 rounded-[1rem] transition-colors ${isSidebarOpen ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+                        style={glass.pill}
+                    >
+                        <Menu className="w-5 h-5" />
+                    </motion.button>
+                    <div className="font-bold text-2xl tracking-tighter text-white flex items-center select-none">
+                        INVR<span className="text-emerald-500">.</span>
+                    </div>
                 </div>
 
                 {/* Search Explorer — glass.nested form */}
@@ -600,383 +625,368 @@ export default function Workspace() {
             <div className="flex-1 flex gap-4 min-h-0 relative z-10 w-full">
 
                 {/* ═══════════════════════════════════════
-                    PANE 1: ACTIVE LEDGER (left sidebar)
+                    PANE 1: SIDEBAR (left)
                 ═══════════════════════════════════════ */}
-                <div className="hidden lg:flex w-[260px] flex-col rounded-[2.5rem] overflow-hidden shrink-0" style={glass.base}>
-                    <div className="p-6 border-b border-white/10 shrink-0">
-                        <p className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40">Active Ledger</p>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-3">
-                        {ledgerItems.length === 0 ? (
-                            <div className="p-4 text-center text-xs text-white/30 uppercase tracking-[0.1em]">
-                                No active predictions. Run search.
+                <AnimatePresence>
+                    {isSidebarOpen && (
+                        <>
+                            {/* Optional scrim to close sidebar when clicking outside */}
+                            <motion.div 
+                                key="sidebar-scrim"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setIsSidebarOpen(false)}
+                                className="absolute inset-0 z-40 bg-black/20 backdrop-blur-[2px]"
+                            />
+                            <motion.div 
+                                key="sidebar-panel"
+                                initial={{ x: -320, opacity: 0 }}
+                                animate={{ x: 0, opacity: 1 }}
+                                exit={{ x: -320, opacity: 0 }}
+                                transition={springSoft}
+                                className="absolute left-0 top-0 bottom-0 z-50 flex flex-col w-[280px] rounded-[2.5rem] overflow-hidden" 
+                                style={{
+                                    ...glass.base,
+                                    boxShadow: '0 25px 80px rgba(0,0,0,0.8), ' + glass.base.boxShadow
+                                }}
+                            >
+                            <div className="p-4 border-b border-white/10 shrink-0 flex gap-2">
+                                <button
+                                    onClick={() => setSidebarTab('ledger')}
+                                    className={`flex-1 py-2 text-[10px] font-bold tracking-[0.15em] uppercase rounded-[1rem] transition-colors ${sidebarTab === 'ledger' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/80'}`}
+                                >
+                                    Recent
+                                </button>
+                                <button
+                                    onClick={() => setSidebarTab('watchlist')}
+                                    className={`flex-1 py-2 text-[10px] font-bold tracking-[0.15em] uppercase rounded-[1rem] transition-colors ${sidebarTab === 'watchlist' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/80'}`}
+                                >
+                                    Watchlist
+                                </button>
                             </div>
-                        ) : (
-                            ledgerItems.map((item) => {
-                                const isSelected = activeItem?.log_id === item.log_id;
-                                return (
-                                    <motion.div
-                                        key={item.log_id}
-                                        onClick={() => setActiveItem(item)}
-                                        className="p-4 rounded-[1.25rem] flex justify-between items-center cursor-pointer relative overflow-hidden"
-                                        style={isSelected ? {
-                                            border: '1px solid rgba(16,185,129,0.35)',
-                                            background: 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(13,148,136,0.04) 100%)',
-                                            boxShadow: '0 0 20px rgba(16,185,129,0.12), inset 0 1px 0 rgba(255,255,255,0.18)',
-                                        } : glass.nested}
-                                        whileHover={{ scale: 1.01 }}
-                                        transition={springSoft}
-                                    >
-                                        <div>
-                                            <h4 className={`text-lg font-bold tracking-tighter ${isSelected ? 'text-white' : 'text-white/50 hover:text-white transition-colors'}`}>
-                                                {item.ticker.split('.')[0]}
-                                            </h4>
-                                            <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-[0.875rem]" style={glass.nested}>
-                                                <span className="text-[10px] font-bold tracking-[0.15em] text-emerald-400 uppercase tabular-nums">
-                                                    {(item.gold_verdict.confidence_score / 10.0)?.toFixed(1) || '0.0'} Score
-                                                </span>
-                                            </div>
+
+                            <div className="flex-1 overflow-y-auto no-scrollbar p-4 flex flex-col gap-3">
+                                {sidebarTab === 'ledger' ? (
+                                    // Ledger items
+                                    ledgerItems.length === 0 ? (
+                                        <div className="p-4 text-center text-xs text-white/30 uppercase tracking-[0.1em]">
+                                            No active predictions. Run search.
                                         </div>
-                                        {isSelected && (
-                                            <motion.div
-                                                className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
-                                                animate={{ scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }}
-                                                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                                            />
-                                        )}
-                                    </motion.div>
-                                );
-                            })
-                        )}
-                    </div>
-                </div>
+                                    ) : (
+                                        ledgerItems.map((item) => {
+                                            const isSelected = activeItem?.log_id === item.log_id;
+                                            const isItemWatched = watchlist.includes(item.ticker);
+                                            return (
+                                                <motion.div
+                                                    key={item.log_id}
+                                                    onClick={() => setActiveItem(item)}
+                                                    className="p-4 rounded-[1.25rem] flex flex-col gap-2 cursor-pointer relative overflow-hidden group"
+                                                    style={isSelected ? {
+                                                        border: '1px solid rgba(16,185,129,0.35)',
+                                                        background: 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(13,148,136,0.04) 100%)',
+                                                        boxShadow: '0 0 20px rgba(16,185,129,0.12), inset 0 1px 0 rgba(255,255,255,0.18)',
+                                                    } : glass.nested}
+                                                    whileHover={{ scale: 1.01 }}
+                                                    transition={springSoft}
+                                                >
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <h4 className={`text-lg font-bold tracking-tighter ${isSelected ? 'text-white' : 'text-white/50 group-hover:text-white transition-colors'}`}>
+                                                                {item.ticker.split('.')[0]}
+                                                            </h4>
+                                                            <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[0.875rem]" style={glass.nested}>
+                                                                <span className="text-[10px] font-bold tracking-[0.15em] text-emerald-400 uppercase tabular-nums">
+                                                                    {(item.gold_verdict.confidence_score / 10.0)?.toFixed(1) || '0.0'} Score
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    isItemWatched 
+                                                                        ? setWatchlist(watchlist.filter(t => t !== item.ticker))
+                                                                        : setWatchlist([...watchlist, item.ticker]);
+                                                                }}
+                                                                className="p-1.5 rounded-full hover:bg-white/10 text-white/50 hover:text-emerald-400 transition-colors"
+                                                            >
+                                                                {isItemWatched ? <BookmarkCheck className="w-4 h-4 text-emerald-400" /> : <Plus className="w-4 h-4" />}
+                                                            </button>
+                                                            <button 
+                                                                onClick={(e) => deleteLedgerItem(e, item.log_id)}
+                                                                className="p-1.5 rounded-full hover:bg-white/10 text-white/50 hover:text-rose-400 transition-colors"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    {isSelected && (
+                                                        <motion.div
+                                                            className="absolute right-4 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"
+                                                            animate={{ scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }}
+                                                            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                                                        />
+                                                    )}
+                                                </motion.div>
+                                            );
+                                        })
+                                    )
+                                ) : (
+                                    // Watchlist items
+                                    watchlist.length === 0 ? (
+                                        <div className="p-4 text-center text-xs text-white/30 uppercase tracking-[0.1em]">
+                                            Watchlist empty
+                                        </div>
+                                    ) : (
+                                        watchlist.map((ticker) => (
+                                            <div
+                                                key={ticker}
+                                                className="p-4 rounded-[1.25rem] flex justify-between items-center relative overflow-hidden group"
+                                                style={glass.nested}
+                                            >
+                                                <h4 className="text-base font-bold tracking-tighter text-white/70 group-hover:text-white transition-colors">
+                                                    {ticker.split('.')[0]}
+                                                </h4>
+                                                <div className="flex gap-2">
+                                                    <button 
+                                                        onClick={() => runAnalysis(ticker)}
+                                                        className="p-1.5 rounded-full hover:bg-white/10 text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    >
+                                                        <Search className="w-4 h-4" />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setWatchlist(watchlist.filter(t => t !== ticker))}
+                                                        className="p-1.5 rounded-full hover:bg-white/10 text-white/50 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )
+                                )}
+                            </div>
+                        </motion.div>
+                        </>
+                    )}
+                </AnimatePresence>
 
                 {/* ═══════════════════════════════════════
                     PANE 2: EXPLORER (center, scrollable)
                 ═══════════════════════════════════════ */}
                 <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col gap-4">
 
-                    {/* TOP: Primary Chart Card */}
-                    <div className="rounded-[2.5rem] p-8 flex flex-col gap-6 shrink-0 relative overflow-hidden" style={glass.base}>
-                        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-10">
-                            <div>
-                                <div className="flex items-center gap-4 mb-2">
-                                    <motion.h1
-                                        className="text-5xl md:text-[4rem] font-bold tracking-tighter text-white leading-none"
-                                        animate={{ y: [0, -3, 0] }}
-                                        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-                                    >
-                                        {activeItem?.ticker?.split('.')[0] ?? '—'}
-                                    </motion.h1>
-                                    <motion.button
-                                        onClick={() => {
-                                            if (!activeItem) return;
-                                            isWatched
-                                                ? setWatchlist(watchlist.filter(t => t !== activeItem.ticker))
-                                                : setWatchlist([...watchlist, activeItem.ticker]);
-                                        }}
-                                        whileHover={{ scale: 1.03 }}
-                                        whileTap={{ scale: 0.97 }}
-                                        transition={springPress}
-                                        className="p-2.5 rounded-[1rem]"
-                                        style={glass.pill}
-                                    >
-                                        {isWatched
-                                            ? <BookmarkCheck className="w-5 h-5 text-emerald-400" />
-                                            : <Plus className="w-5 h-5 text-white/60" />
-                                        }
-                                    </motion.button>
+                    {/* TOP ROW: Chart & Metrics */}
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 shrink-0">
+                        
+                        {/* Chart Card */}
+                        <div className="rounded-[2.5rem] p-6 flex flex-col gap-4 shrink-0 relative overflow-hidden" style={glass.base}>
+                            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 relative z-10">
+                                <div>
+                                    <div className="flex items-center gap-4 mb-2">
+                                        <motion.h1
+                                            className="text-4xl md:text-5xl font-bold tracking-tighter text-white leading-none"
+                                            animate={{ y: [0, -3, 0] }}
+                                            transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
+                                        >
+                                            {activeItem?.ticker?.split('.')[0] ?? '—'}
+                                        </motion.h1>
+                                        <motion.button
+                                            onClick={() => {
+                                                if (!activeItem) return;
+                                                isWatched
+                                                    ? setWatchlist(watchlist.filter(t => t !== activeItem.ticker))
+                                                    : setWatchlist([...watchlist, activeItem.ticker]);
+                                            }}
+                                            whileHover={{ scale: 1.03 }}
+                                            whileTap={{ scale: 0.97 }}
+                                            transition={springPress}
+                                            className="p-2 rounded-[1rem]"
+                                            style={glass.pill}
+                                        >
+                                            {isWatched
+                                                ? <BookmarkCheck className="w-5 h-5 text-emerald-400" />
+                                                : <Plus className="w-5 h-5 text-white/60" />
+                                            }
+                                        </motion.button>
+                                    </div>
+                                    <p className="text-white/50 font-bold tracking-tighter text-sm">
+                                        {activeItem ? `${activeItem.ticker} • ${activeItem.timeframe.toUpperCase()}` : 'Search a ticker to begin'}
+                                    </p>
                                 </div>
-                                <p className="text-white/50 font-bold tracking-tighter text-lg">
-                                    {activeItem ? `${activeItem.ticker} • ${activeItem.timeframe.toUpperCase()}` : 'Search a ticker to begin analysis'}
-                                </p>
+
+                                <div className="flex flex-col md:items-end">
+                                    <div className="inline-flex flex-col items-end gap-1">
+                                        {activePrice != null ? (
+                                            <span className="text-3xl md:text-4xl font-bold tracking-tighter tabular-nums text-white">
+                                                ₹{activePrice.toFixed(2)}
+                                            </span>
+                                        ) : (
+                                            <span className="text-3xl md:text-4xl font-bold tracking-tighter tabular-nums text-white/20">
+                                                —
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
 
-                            <div className="flex flex-col md:items-end">
-                                <div className="inline-flex flex-col items-end gap-1">
-                                    {activePrice != null ? (
-                                        <span className="text-4xl md:text-5xl font-bold tracking-tighter tabular-nums text-white">
-                                            ₹{activePrice.toFixed(2)}
-                                        </span>
+                            {/* Chart panel */}
+                            <div className="rounded-[1.5rem] p-4 relative" style={glass.nested}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <div className="flex gap-1 p-1 rounded-[1.25rem]" style={glass.pill}>
+                                        {(['1W', '1M', '6M', '1Y'] as const).map((tf) => (
+                                            <button
+                                                key={tf}
+                                                onClick={() => setTimeframe(tf)}
+                                                className={`relative px-4 py-1.5 text-[10px] font-bold tracking-[0.15em] uppercase transition-colors rounded-[1rem] z-10 ${
+                                                    timeframe === tf ? 'text-white' : 'text-white/40 hover:text-white/80'
+                                                }`}
+                                            >
+                                                {timeframe === tf && (
+                                                    <motion.div
+                                                        layoutId="tf-pill"
+                                                        className="absolute inset-0 rounded-[1rem] bg-white/[0.08]"
+                                                        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)' }}
+                                                        transition={springSoft}
+                                                    />
+                                                )}
+                                                <span className="relative z-10">{tf}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-white/40 hidden md:block">
+                                        Price Action
+                                    </span>
+                                </div>
+
+                                {/* Chart */}
+                                <div className="h-[140px] w-full relative">
+                                    {chartData ? (
+                                        <>
+                                            <AnimatePresence mode="wait">
+                                                <motion.svg
+                                                    key={timeframe}
+                                                    viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                                                    className="w-full h-full overflow-visible"
+                                                    preserveAspectRatio="none"
+                                                    initial={{ opacity: 0 }}
+                                                    animate={{ opacity: 1 }}
+                                                    exit={{ opacity: 0 }}
+                                                    transition={{ duration: 0.3 }}
+                                                >
+                                                    <defs>
+                                                        <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                                                            <stop offset="0%" stopColor="#0D9488" />
+                                                            <stop offset="100%" stopColor="#10B981" />
+                                                        </linearGradient>
+                                                        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="0%" stopColor="#10B981" stopOpacity="0.20" />
+                                                            <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    {[0.25, 0.5, 0.75].map((f) => (
+                                                        <line
+                                                            key={f}
+                                                            x1="0" x2={CHART_W}
+                                                            y1={CHART_H * f} y2={CHART_H * f}
+                                                            stroke="rgba(255,255,255,0.05)" strokeWidth="1"
+                                                        />
+                                                    ))}
+                                                    <motion.path
+                                                        d={chartData.area} fill="url(#areaGrad)"
+                                                        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                                        transition={{ duration: 0.8, delay: 0.3 }}
+                                                    />
+                                                    <motion.path
+                                                        d={chartData.line} fill="none"
+                                                        stroke="url(#lineGrad)" strokeWidth="2.5" strokeLinecap="round"
+                                                        initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
+                                                        transition={{ duration: 1.5, ease: 'easeInOut' }}
+                                                        className="drop-shadow-[0_4px_12px_rgba(16,185,129,0.3)]"
+                                                    />
+                                                </motion.svg>
+                                            </AnimatePresence>
+                                            <motion.div
+                                                style={{
+                                                    left: `${(chartData.last.x / CHART_W) * 100}%`,
+                                                    top:  `${(chartData.last.y / CHART_H) * 100}%`,
+                                                }}
+                                                className="absolute -translate-y-1/2 -translate-x-1/2"
+                                            >
+                                                <div className="relative flex items-center justify-center">
+                                                    <motion.div
+                                                        animate={{ scale: [1, 2.5, 1], opacity: [0.8, 0, 0.8] }}
+                                                        transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                                                        className="absolute w-3 h-3 rounded-full bg-emerald-400 blur-[2px]"
+                                                    />
+                                                    <div className="w-2 h-2 rounded-full bg-emerald-400 relative z-10 shadow-[0_0_10px_rgba(16,185,129,1)]" />
+                                                </div>
+                                            </motion.div>
+                                        </>
                                     ) : (
-                                        <span className="text-4xl md:text-5xl font-bold tracking-tighter tabular-nums text-white/20">
-                                            —
-                                        </span>
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                            <p className="text-[10px] font-bold tracking-[0.15em] uppercase text-white/20">
+                                                Search a ticker to load price action
+                                            </p>
+                                        </div>
                                     )}
                                 </div>
-                            </div>
-                        </div>
 
-                        {/* Chart panel */}
-                        <div className="rounded-[1.5rem] p-6 relative" style={glass.nested}>
-                            <div className="flex justify-between items-center mb-6">
-                                <div className="flex gap-1 p-1 rounded-[1.25rem]" style={glass.pill}>
-                                    {(['1W', '1M', '6M', '1Y'] as const).map((tf) => (
-                                        <button
-                                            key={tf}
-                                            onClick={() => setTimeframe(tf)}
-                                            className={`relative px-5 py-2 text-[11px] font-bold tracking-[0.15em] uppercase transition-colors rounded-[1rem] z-10 ${
-                                                timeframe === tf ? 'text-white' : 'text-white/40 hover:text-white/80'
-                                            }`}
-                                        >
-                                            {timeframe === tf && (
-                                                <motion.div
-                                                    layoutId="tf-pill"
-                                                    className="absolute inset-0 rounded-[1rem] bg-white/[0.08]"
-                                                    style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)' }}
-                                                    transition={springSoft}
-                                                />
-                                            )}
-                                            <span className="relative z-10">{tf}</span>
-                                        </button>
+                                <div className="flex justify-between mt-2">
+                                    {(['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'] as const).map((m) => (
+                                        <span key={m} className="text-[8px] font-bold tracking-[0.1em] text-white/25 uppercase">
+                                            {m}
+                                        </span>
                                     ))}
                                 </div>
-                                <span className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40 hidden md:block">
-                                    Price Action
-                                </span>
-                            </div>
-
-                            {/* Chart */}
-                            <div className="h-[200px] w-full relative">
-                                {chartData ? (
-                                    <>
-                                        <AnimatePresence mode="wait">
-                                            <motion.svg
-                                                key={timeframe}
-                                                viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-                                                className="w-full h-full overflow-visible"
-                                                preserveAspectRatio="none"
-                                                initial={{ opacity: 0 }}
-                                                animate={{ opacity: 1 }}
-                                                exit={{ opacity: 0 }}
-                                                transition={{ duration: 0.3 }}
-                                            >
-                                                <defs>
-                                                    <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-                                                        <stop offset="0%" stopColor="#0D9488" />
-                                                        <stop offset="100%" stopColor="#10B981" />
-                                                    </linearGradient>
-                                                    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="0%" stopColor="#10B981" stopOpacity="0.20" />
-                                                        <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
-                                                    </linearGradient>
-                                                </defs>
-                                                {[0.25, 0.5, 0.75].map((f) => (
-                                                    <line
-                                                        key={f}
-                                                        x1="0" x2={CHART_W}
-                                                        y1={CHART_H * f} y2={CHART_H * f}
-                                                        stroke="rgba(255,255,255,0.05)" strokeWidth="1"
-                                                    />
-                                                ))}
-                                                <motion.path
-                                                    d={chartData.area} fill="url(#areaGrad)"
-                                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                                                    transition={{ duration: 0.8, delay: 0.3 }}
-                                                />
-                                                <motion.path
-                                                    d={chartData.line} fill="none"
-                                                    stroke="url(#lineGrad)" strokeWidth="2.5" strokeLinecap="round"
-                                                    initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
-                                                    transition={{ duration: 1.5, ease: 'easeInOut' }}
-                                                    className="drop-shadow-[0_4px_12px_rgba(16,185,129,0.3)]"
-                                                />
-                                            </motion.svg>
-                                        </AnimatePresence>
-                                        <motion.div
-                                            style={{
-                                                left: `${(chartData.last.x / CHART_W) * 100}%`,
-                                                top:  `${(chartData.last.y / CHART_H) * 100}%`,
-                                            }}
-                                            className="absolute -translate-y-1/2 -translate-x-1/2"
-                                        >
-                                            <div className="relative flex items-center justify-center">
-                                                <motion.div
-                                                    animate={{ scale: [1, 2.5, 1], opacity: [0.8, 0, 0.8] }}
-                                                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                                                    className="absolute w-4 h-4 rounded-full bg-emerald-400 blur-[2px]"
-                                                />
-                                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 relative z-10 shadow-[0_0_10px_rgba(16,185,129,1)]" />
-                                            </div>
-                                        </motion.div>
-                                    </>
-                                ) : (
-                                    <div className="absolute inset-0 flex items-center justify-center">
-                                        <p className="text-xs font-bold tracking-[0.15em] uppercase text-white/20">
-                                            Search a ticker to load price action
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="flex justify-between mt-3">
-                                {(['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'] as const).map((m) => (
-                                    <span key={m} className="text-[9px] font-bold tracking-[0.1em] text-white/25 uppercase">
-                                        {m}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* BOTTOM: Data matrices row */}
-                    <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 shrink-0 pb-4">
-
-                        {/* GOLD VERDICT CARD (3 cols) */}
-                        <div className="xl:col-span-3 rounded-[2.5rem] p-8 flex flex-col relative overflow-hidden" style={glass.base}>
-                            <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-gradient-to-b from-emerald-400 to-teal-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
-
-                            <div className="ml-5">
-                                <p className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-1.5">
-                                    Gold Layer · System Verdict
-                                </p>
-
-                                {verdictData ? (
-                                    <>
-                                        <div className="flex items-center gap-4 mb-4">
-                                            <h3 className="text-2xl font-bold tracking-tighter text-white">
-                                                {verdictData.verdict}
-                                            </h3>
-                                            <div
-                                                className="flex flex-col items-center justify-center px-4 py-2 rounded-[1.25rem]"
-                                                style={glass.nested}
-                                            >
-                                                <span className="font-bold tracking-tighter text-xl text-white tabular-nums leading-none">
-                                                    {verdictData.score.toFixed(1)}
-                                                </span>
-                                                <span className="text-[9px] font-bold tracking-[0.15em] text-emerald-400 uppercase mt-1">
-                                                    Score
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <p className="text-white/55 font-bold tracking-tighter text-base leading-relaxed mb-6 max-w-xl">
-                                            {verdictData.reason}
-                                        </p>
-
-                                        {/* LLM Analysis Section */}
-                                        {verdictData.llm_analysis && (
-                                            <div className="mb-8 flex flex-col gap-5">
-                                                {/* Investment Thesis */}
-                                                {verdictData.llm_analysis.personalized_reasoning && verdictData.llm_analysis.personalized_reasoning.length > 0 && (
-                                                    <div className="flex flex-col gap-2">
-                                                        <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400">Investment Thesis & Profile Alignment</h4>
-                                                        <div className="text-white/70 text-sm leading-relaxed space-y-2">
-                                                            {verdictData.llm_analysis.personalized_reasoning.filter((line: string) => !line.toUpperCase().includes('INVESTMENT THESIS') && !line.toUpperCase().includes('QUANTITATIVE SCORECARD') && !line.toUpperCase().includes('OVERALL VERDICT')).map((line: string, i: number) => (
-                                                                <p key={i}>{line.replace(/^- /, '')}</p>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* What to Watch */}
-                                                {verdictData.llm_analysis.what_to_watch && verdictData.llm_analysis.what_to_watch.length > 0 && (
-                                                    <div className="flex flex-col gap-2">
-                                                        <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400">Actionable Conditions</h4>
-                                                        <ul className="text-white/70 text-sm leading-relaxed list-disc list-outside ml-4 space-y-1">
-                                                            {verdictData.llm_analysis.what_to_watch.map((line: string, i: number) => (
-                                                                <li key={i}>{line.replace(/^- /, '')}</li>
-                                                            ))}
-                                                        </ul>
-                                                    </div>
-                                                )}
-                                                
-                                                {/* Risk Warning */}
-                                                {verdictData.llm_analysis.risk_warning && (
-                                                    <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10">
-                                                        <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-red-400 mb-1">Risk Warning</h4>
-                                                        <p className="text-red-200/80 text-sm leading-relaxed">{verdictData.llm_analysis.risk_warning}</p>
-                                                    </div>
-                                                )}
-                                                
-                                                {/* Tutor Triggers */}
-                                                {verdictData.llm_analysis.tutor_triggers && verdictData.llm_analysis.tutor_triggers.length > 0 && (
-                                                    <div className="flex flex-wrap gap-2 mt-2">
-                                                        {verdictData.llm_analysis.tutor_triggers.map((trigger: string, i: number) => (
-                                                            <button 
-                                                                key={i}
-                                                                onClick={() => {
-                                                                    setCommand(`Explain ${trigger} and how it impacts this stock.`);
-                                                                }}
-                                                                className="px-4 py-2 rounded-full bg-white/5 border border-white/10 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:text-emerald-400 transition-all text-xs font-bold text-white/80 tracking-wide"
-                                                            >
-                                                                Ask Tutor: {trigger}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {/* Gates list */}
-                                            <div className="flex flex-col gap-3">
-                                                <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
-                                                    Hard Gates Cleared
-                                                </h4>
-                                                {verdictData.gates.map((g, i) => (
-                                                    <div key={i} className="flex justify-between items-center py-2 border-b border-white/5">
-                                                        <span className="text-sm font-bold tracking-tighter text-white/70">{g.name}</span>
-                                                        <span className={`text-[10px] font-bold tracking-[0.15em] uppercase ${
-                                                            g.status === 'PASS' ? 'text-emerald-400' :
-                                                            g.status === 'WARN' ? 'text-amber-400' : 'text-red-400'
-                                                        }`}>{g.status}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            {/* Trade setup */}
-                                            {verdictData.setup && (
-                                                <div className="rounded-[1.5rem] p-5 relative overflow-hidden" style={glass.nested}>
-                                                    <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
-                                                    <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-3 mt-1">
-                                                        Trade Architecture
-                                                    </h4>
-                                                    {[
-                                                        { label: 'Entry Zone',  val: `₹${verdictData.setup.entry_low} – ${verdictData.setup.entry_high}`, cls: 'text-white' },
-                                                        { label: 'Stop Loss',   val: `₹${verdictData.setup.stop_loss}`, cls: 'text-red-400' },
-                                                        { label: 'Targets',     val: `₹${verdictData.setup.target_1} / ${verdictData.setup.target_2}`, cls: 'text-emerald-400' },
-                                                        { label: 'R/R Ratio',   val: `${verdictData.setup.rr_ratio}×`, cls: 'text-white/70' },
-                                                    ].map(({ label, val, cls }) => (
-                                                        <div key={label} className="flex justify-between items-center py-1.5">
-                                                            <span className="text-sm font-bold tracking-tighter text-white/55">{label}</span>
-                                                            <span className={`text-sm font-bold tracking-tighter tabular-nums ${cls}`}>{val}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="flex-1 flex items-center justify-center py-12">
-                                        <p className="text-sm font-bold tracking-[0.12em] uppercase text-white/20">
-                                            Run a ticker analysis to load verdict
-                                        </p>
-                                    </div>
-                                )}
                             </div>
                         </div>
 
-                        {/* BRONZE DATA GRID (2 cols) */}
-                        <div className="xl:col-span-2 rounded-[2.5rem] p-8 flex flex-col" style={glass.base}>
-                            <div className="mb-5 border-b border-white/10 pb-4">
+                        {/* Metrics Data Grid */}
+                        <div className="rounded-[2.5rem] p-6 flex flex-col" style={glass.base}>
+                            <div className="mb-4 border-b border-white/10 pb-3">
                                 <p className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40">
                                     Bronze Layer · Raw Ingestion
                                 </p>
                             </div>
                             {displayMetrics ? (
-                                <div className="grid grid-cols-2 gap-3 flex-1 content-start">
-                                    {displayMetrics.map((data, i) => (
-                                        <div key={i} className="flex flex-col p-4 rounded-[1.25rem]" style={glass.nested}>
-                                            <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
-                                                {data.label}
-                                            </span>
-                                            <span className="text-xl font-bold tracking-tighter tabular-nums text-white">
-                                                {data.value}
-                                            </span>
+                                <div className="flex flex-col gap-3 flex-1">
+                                    {/* Bento span 2 */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="col-span-2 flex justify-between items-center p-6 rounded-[1.5rem] relative overflow-hidden" style={glass.nested}>
+                                            <div className="absolute inset-0 bg-gradient-to-br from-white/[0.03] to-transparent pointer-events-none" />
+                                            <div className="flex flex-col relative z-10">
+                                                <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-1">
+                                                    Current Price
+                                                </span>
+                                                <span className="text-3xl font-bold tracking-tighter tabular-nums text-white leading-none">
+                                                    {displayMetrics[0].value}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-col text-right relative z-10">
+                                                <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
+                                                    Volume
+                                                </span>
+                                                <span className="text-xl font-bold tracking-tighter tabular-nums text-white/80 leading-none">
+                                                    {displayMetrics[1].value}
+                                                </span>
+                                            </div>
                                         </div>
-                                    ))}
+                                    </div>
+                                    {/* Tech metrics */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {displayMetrics.slice(2).map((data, i) => (
+                                            <div key={i} className="flex flex-col p-4 rounded-[1.25rem]" style={glass.nested}>
+                                                <span className="text-[9px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
+                                                    {data.label}
+                                                </span>
+                                                <span className="text-lg font-bold tracking-tighter tabular-nums text-white">
+                                                    {data.value}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             ) : (
                                 <div className="flex-1 flex items-center justify-center">
@@ -987,12 +997,178 @@ export default function Workspace() {
                             )}
                         </div>
                     </div>
+
+                    {/* BOTTOM ROW: Full Width Verdict */}
+                    <div className="rounded-[2.5rem] p-8 flex flex-col relative overflow-hidden shrink-0 mb-4" style={glass.base}>
+                        <div className="absolute top-0 left-0 bottom-0 w-1.5 bg-gradient-to-b from-emerald-400 to-teal-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
+
+                        <div className="ml-5">
+                            <p className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-1.5">
+                                Gold Layer · System Verdict
+                            </p>
+
+                            {verdictData ? (
+                                <>
+                                    <div className="flex items-center gap-4 mb-4">
+                                        <h3 className="text-3xl md:text-4xl font-bold tracking-tighter text-white">
+                                            {verdictData.verdict}
+                                        </h3>
+                                        <div
+                                            className="flex flex-col items-center justify-center px-4 py-2 rounded-[1.25rem]"
+                                            style={glass.nested}
+                                        >
+                                            <span className="font-bold tracking-tighter text-xl text-white tabular-nums leading-none">
+                                                {verdictData.score.toFixed(1)}
+                                            </span>
+                                            <span className="text-[9px] font-bold tracking-[0.15em] text-emerald-400 uppercase mt-1">
+                                                Score
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <p className="text-white/60 font-bold tracking-tighter text-base md:text-lg leading-relaxed mb-6 max-w-3xl">
+                                        {verdictData.reason}
+                                    </p>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        {/* Left Col: LLM Analysis */}
+                                        <div>
+                                            {verdictData.llm_analysis && (
+                                                <div className="flex flex-col gap-6">
+                                                    {/* Investment Thesis */}
+                                                    {verdictData.llm_analysis.personalized_reasoning && verdictData.llm_analysis.personalized_reasoning.length > 0 && (
+                                                        <div className="flex flex-col gap-2">
+                                                            <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400">Investment Thesis & Profile Alignment</h4>
+                                                            <div className="text-white/70 text-sm leading-relaxed space-y-2">
+                                                                {verdictData.llm_analysis.personalized_reasoning.filter((line: string) => !line.toUpperCase().includes('INVESTMENT THESIS') && !line.toUpperCase().includes('QUANTITATIVE SCORECARD') && !line.toUpperCase().includes('OVERALL VERDICT')).map((line: string, i: number) => (
+                                                                    <p key={i}>{line.replace(/^- /, '')}</p>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* What to Watch */}
+                                                    {verdictData.llm_analysis.what_to_watch && verdictData.llm_analysis.what_to_watch.length > 0 && (
+                                                        <div className="flex flex-col gap-2">
+                                                            <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400">Actionable Conditions</h4>
+                                                            <ul className="text-white/70 text-sm leading-relaxed list-disc list-outside ml-4 space-y-1">
+                                                                {verdictData.llm_analysis.what_to_watch.map((line: string, i: number) => (
+                                                                    <li key={i}>{line.replace(/^- /, '')}</li>
+                                                                ))}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Risk Warning */}
+                                                    {verdictData.llm_analysis.risk_warning && (
+                                                        <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10">
+                                                            <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-red-400 mb-1">Risk Warning</h4>
+                                                            <p className="text-red-200/80 text-sm leading-relaxed">{verdictData.llm_analysis.risk_warning}</p>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Tutor Triggers */}
+                                                    {verdictData.llm_analysis.tutor_triggers && verdictData.llm_analysis.tutor_triggers.length > 0 && (
+                                                        <div className="flex flex-wrap gap-2 mt-4">
+                                                            {verdictData.llm_analysis.tutor_triggers.map((trigger: string, i: number) => (
+                                                                <button 
+                                                                    key={i}
+                                                                    onClick={() => {
+                                                                        setCommand(`Explain ${trigger} and how it impacts this stock.`);
+                                                                    }}
+                                                                    className="group flex items-center gap-2 px-3 py-1.5 rounded-full bg-transparent border border-white/10 hover:border-emerald-500/30 transition-colors"
+                                                                >
+                                                                    <span className="text-[9px] font-bold tracking-[0.15em] text-white/30 group-hover:text-emerald-500/50 uppercase transition-colors">&gt;</span>
+                                                                    <span className="text-[10px] font-bold tracking-[0.12em] text-white/50 group-hover:text-emerald-400 uppercase transition-colors">
+                                                                        {trigger.replace(/\s+/g, '_')}
+                                                                    </span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Right Col: Gates & Setup */}
+                                        <div className="flex flex-col gap-6">
+                                            {/* Trade setup */}
+                                            {verdictData.setup && (
+                                                <div className="rounded-[1.5rem] p-6 relative overflow-hidden flex flex-col" style={glass.nested}>
+                                                    <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
+                                                    <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-6 mt-1">
+                                                        Trade Architecture
+                                                    </h4>
+                                                    
+                                                    <div className="flex items-end justify-between mb-6">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">R/R Ratio</span>
+                                                            <span className="text-4xl font-bold tracking-tighter tabular-nums text-white leading-none">
+                                                                {verdictData.setup.rr_ratio}×
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-red-400/70 mb-1">Stop Loss</span>
+                                                            <span className="text-2xl font-bold tracking-tighter tabular-nums text-red-400 leading-none">
+                                                                ₹{verdictData.setup.stop_loss}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div className="flex flex-col p-3 rounded-[1rem] bg-white/[0.02] border border-white/5">
+                                                            <span className="text-[9px] font-bold tracking-[0.15em] uppercase text-white/30 mb-1">Entry Zone</span>
+                                                            <span className="text-sm font-bold tracking-tighter tabular-nums text-white/80">
+                                                                ₹{verdictData.setup.entry_low} – {verdictData.setup.entry_high}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex flex-col p-3 rounded-[1rem] bg-emerald-500/[0.03] border border-emerald-500/10">
+                                                            <span className="text-[9px] font-bold tracking-[0.15em] uppercase text-emerald-400/60 mb-1">Targets</span>
+                                                            <span className="text-sm font-bold tracking-tighter tabular-nums text-emerald-400">
+                                                                ₹{verdictData.setup.target_1} / {verdictData.setup.target_2}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Gates list */}
+                                            <div className="flex flex-col gap-3 mt-2">
+                                                <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40 mb-2">
+                                                    Hard Gates Cleared
+                                                </h4>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {verdictData.gates.map((g, i) => (
+                                                        <div key={i} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10" style={glass.pill}>
+                                                            <div className={`w-1.5 h-1.5 rounded-full ${
+                                                                g.status === 'PASS' ? 'bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]' :
+                                                                g.status === 'WARN' ? 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]' : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.8)]'
+                                                            }`} />
+                                                            <span className="text-[9px] font-bold tracking-[0.15em] uppercase text-white/70">
+                                                                {g.name}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex-1 flex items-center justify-center py-20">
+                                    <p className="text-sm font-bold tracking-[0.12em] uppercase text-white/20">
+                                        Run a ticker analysis to load verdict
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
 
                 {/* ═══════════════════════════════════════
                     PANE 3: EXECUTION LOG (right)
                 ═══════════════════════════════════════ */}
-                <div className="w-[400px] rounded-[2.5rem] flex flex-col shrink-0 relative overflow-hidden" style={glass.base}>
+                <div className="w-[500px] rounded-[2.5rem] flex flex-col shrink-0 relative overflow-hidden hidden md:flex" style={glass.base}>
                     <div className="p-6 border-b border-white/10 flex justify-between items-center shrink-0">
                         <div>
                             <p className="text-[10px] font-bold tracking-[0.18em] uppercase text-emerald-400 mb-1">
@@ -1056,16 +1232,17 @@ export default function Workspace() {
                     </div>
 
                     {/* Command input */}
-                    <div className="p-4 border-t border-white/10 shrink-0 bg-black/40">
-                        <form onSubmit={handleCommand} className="relative flex items-center rounded-[1.25rem] p-1" style={glass.nested}>
-                            <CornerDownRight className="absolute left-4 w-4 h-4 text-white/30" />
+                    <div className="p-4 border-t border-white/10 shrink-0 bg-transparent relative">
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#010204]/80 to-transparent pointer-events-none" />
+                        <form onSubmit={handleCommand} className="relative flex items-center bg-transparent border-t border-white/5">
+                            <span className="absolute left-4 font-mono text-emerald-400/50 text-xs tracking-widest">&gt;</span>
                             <input
                                 type="text"
                                 value={command}
                                 onChange={(e) => setCommand(e.target.value)}
-                                placeholder={isProcessing ? 'Waiting for engine...' : 'Enter query parameters or /analyze TICKER...'}
+                                placeholder={isProcessing ? 'Waiting for engine...' : 'Enter command or /analyze TICKER...'}
                                 disabled={isProcessing}
-                                className="w-full bg-transparent border-none py-4 pl-12 pr-4 outline-none text-sm font-mono text-white placeholder-white/30 disabled:opacity-50"
+                                className="w-full bg-transparent border-none py-4 pl-10 pr-4 outline-none text-sm font-mono text-white placeholder-white/30 disabled:opacity-50"
                             />
                         </form>
                     </div>
