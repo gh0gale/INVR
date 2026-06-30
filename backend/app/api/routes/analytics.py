@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Depends 
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -5,6 +6,8 @@ from app.schemas.api import PipelineRequest, PipelineResponse
 from app.orchestrator import build_pipeline_graph
 from app.services.ledger_service import log_prediction_to_ledger
 from app.api.deps import get_current_user_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
@@ -36,6 +39,7 @@ async def process_pipeline(request: Request, payload: PipelineRequest, backgroun
 
     # 3. Handle gracefully caught errors from your nodes
     if final_state.get("errors"):
+        logger.error("Pipeline failed for %s: %s", payload.ticker, final_state["errors"])
         return PipelineResponse(
             success=False,
             ticker=payload.ticker,
@@ -61,14 +65,31 @@ async def process_pipeline(request: Request, payload: PipelineRequest, backgroun
             silver_data,
             gold_data
         )
-    # 5. Extract Gold Verdict and the Local LLM Synthesizer output
-    gold_verdict = final_state["gold"].verdict if hasattr(final_state.get("gold"), "verdict") else "UNKNOWN"
+
+    # 5. Extract Gold Verdict — handle both Pydantic model instance and plain dict
+    # LangGraph often returns state nodes as plain dicts after serialization
+    gold_state = final_state.get("gold")
+    if gold_state is None:
+        gold_verdict = "UNKNOWN"
+    elif isinstance(gold_state, dict):
+        gold_verdict = gold_state.get("verdict", "UNKNOWN")
+    elif hasattr(gold_state, "verdict"):
+        gold_verdict = gold_state.verdict
+    else:
+        gold_verdict = "UNKNOWN"
+
+    # Also extract LLM output safely
+    llm_output = final_state.get("llm_output")
+    if isinstance(llm_output, dict):
+        pass  # already a dict, pass as-is
+    elif hasattr(llm_output, "model_dump"):
+        llm_output = llm_output.model_dump()
 
     return PipelineResponse(
         success=True,
         ticker=payload.ticker,
         timeframe=payload.timeframe,
         verdict=gold_verdict,
-        llm_analysis=final_state.get("llm_output"),
+        llm_analysis=llm_output,
         errors=None
     )

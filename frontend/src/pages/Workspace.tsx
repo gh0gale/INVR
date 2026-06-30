@@ -126,33 +126,8 @@ function getPricesForChart(tf: '1W' | '1M' | '6M' | '1Y', currentPrice?: number)
     return mockPattern.map(p => p * scale);
 }
 
-const BRONZE_DATA = [
-    { label: 'Market Cap', value: '₹19.3T' },
-    { label: 'P/E Ratio',  value: '28.4'   },
-    { label: 'Div Yield',  value: '0.35%'  },
-    { label: '52W High',   value: '₹3,024' },
-    { label: '52W Low',    value: '₹2,220' },
-    { label: 'Beta',       value: '1.12'   },
-];
-
-const VERDICT_DATA = {
-    verdict: 'STRONG BUY',
-    score: 8.4,
-    reason:
-        'Cleared all hard-gates. Showing immense Institutional Volume expansion and Sector Relative Strength. Ready for entry within the calculated ATR zone.',
-    gates: [
-        { name: 'Circuit Limits',       status: 'PASS' },
-        { name: 'Institutional Volume', status: 'PASS' },
-        { name: 'Trend (20 DMA)',        status: 'PASS' },
-        { name: 'Momentum (RSI)',        status: 'PASS' },
-    ],
-    setup: {
-        entry_low: 2835.50, entry_high: 2855.00,
-        stop_loss: 2750.00,
-        target_1: 2950.00, target_2: 3100.00,
-        rr_ratio: 2.8,
-    },
-};
+// Ticker pattern: all alpha + optional .NS suffix, no spaces — used to auto-detect analyze intent
+const TICKER_PATTERN = /^[A-Za-z0-9&-]{2,12}(\.NS)?$/;
 
 const getTime = () => new Date().toLocaleTimeString('en-US', { hour12: false });
 
@@ -181,23 +156,23 @@ export default function Workspace() {
     const [sessionId] = useState(() => crypto.randomUUID());
     const logEndRef = useRef<HTMLDivElement>(null);
 
-    // Dynamic metrics & price series based on activeItem or mock fallbacks
-    const activePrice = activeItem?.silver_state?.current_price ?? 2847.50;
-    const chartPrices = getPricesForChart(timeframe, activeItem?.silver_state?.current_price);
-    const chartData = buildPriceChart(chartPrices);
-    const isWatched = activeItem ? watchlist.includes(activeItem.ticker) : watchlist.includes('RELIANCE.NS');
+    // Dynamic metrics & price series — strictly from activeItem, no hardcoded fallbacks
+    const activePrice = activeItem?.silver_state?.current_price ?? null;
+    const chartPrices = activePrice ? getPricesForChart(timeframe, activePrice) : null;
+    const chartData = chartPrices ? buildPriceChart(chartPrices) : null;
+    const isWatched = activeItem ? watchlist.includes(activeItem.ticker) : false;
 
-    // Dynamic Display Metrics
+    // Display Metrics — strictly from activeItem
     const displayMetrics = activeItem ? [
-        { label: 'Current Price', value: `₹${activeItem.silver_state.current_price?.toFixed(2) || 'N/A'}` },
-        { label: 'Current Volume', value: activeItem.silver_state.current_volume?.toLocaleString() || 'N/A' },
-        { label: 'RSI (14)', value: activeItem.silver_state.rsi_14?.toFixed(2) || 'N/A' },
-        { label: 'ATR (14)', value: `₹${activeItem.silver_state.atr_14?.toFixed(2) || 'N/A'}` },
-        { label: 'SMA (20)', value: `₹${activeItem.silver_state.sma_20?.toFixed(2) || 'N/A'}` },
-        { label: 'SMA (50)', value: `₹${activeItem.silver_state.sma_50?.toFixed(2) || 'N/A'}` },
-    ] : BRONZE_DATA;
+        { label: 'Current Price', value: `₹${activeItem.silver_state.current_price?.toFixed(2) ?? 'N/A'}` },
+        { label: 'Current Volume', value: activeItem.silver_state.current_volume?.toLocaleString() ?? 'N/A' },
+        { label: 'RSI (14)', value: activeItem.silver_state.rsi_14?.toFixed(2) ?? 'N/A' },
+        { label: 'ATR (14)', value: activeItem.silver_state.atr_14 != null ? `₹${activeItem.silver_state.atr_14.toFixed(2)}` : 'N/A' },
+        { label: 'SMA (20)', value: activeItem.silver_state.sma_20 != null ? `₹${activeItem.silver_state.sma_20.toFixed(2)}` : 'N/A' },
+        { label: 'SMA (50)', value: activeItem.silver_state.sma_50 != null ? `₹${activeItem.silver_state.sma_50.toFixed(2)}` : 'N/A' },
+    ] : null;
 
-    // Dynamic System Verdict
+    // System Verdict — strictly from activeItem
     const verdictData = activeItem ? {
         verdict: activeItem.gold_verdict.verdict,
         score: (activeItem.gold_verdict.confidence_score / 10.0) || 0.0,
@@ -214,9 +189,9 @@ export default function Workspace() {
             target_2: activeItem.gold_verdict.trade_setup.target_2,
             rr_ratio: activeItem.gold_verdict.trade_setup.risk_reward_ratio,
         } : null
-    } : VERDICT_DATA;
+    } : null;
 
-    // Load active ledger history on mount
+    // Load active ledger — deduplicated by ticker, capped to 5 most recent unique tickers
     const fetchLedger = async () => {
         if (!session) return;
         try {
@@ -224,14 +199,22 @@ export default function Workspace() {
                 .from('algorithmic_ledger')
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(20);
+                .limit(50); // fetch more to allow dedup
             
             if (error) throw error;
             if (data && data.length > 0) {
-                setLedgerItems(data);
-                // Set the most recent one as active if nothing is selected
+                // Deduplicate: keep only the most recent entry per unique ticker
+                const seen = new Set<string>();
+                const deduped = data.filter((item: any) => {
+                    if (seen.has(item.ticker)) return false;
+                    seen.add(item.ticker);
+                    return true;
+                }).slice(0, 5); // cap to 5 unique tickers
+
+                setLedgerItems(deduped);
+                // Auto-select most recent if nothing active yet
                 if (!activeItem) {
-                    setActiveItem(data[0]);
+                    setActiveItem(deduped[0]);
                 }
             }
         } catch (err) {
@@ -245,12 +228,19 @@ export default function Workspace() {
 
     // Handle ticker analysis execution
     const runAnalysis = async (rawTicker: string) => {
-        if (!session || !profile) return;
-        
-        let ticker = rawTicker.trim().toUpperCase();
-        if (!ticker.endsWith('.NS')) {
-            ticker += '.NS';
+        if (!session) {
+            setLog(prev => [...prev, { role: 'sys', text: '[ERROR]: No active session. Please reconnect.', time: getTime() }]);
+            return;
         }
+        if (!profile) {
+            setLog(prev => [...prev, { role: 'sys', text: '[ERROR]: Profile not loaded. Please reload the page.', time: getTime() }]);
+            return;
+        }
+        if (isProcessing) return;
+        
+        // Normalize ticker: strip any existing .NS then re-append cleanly
+        const rawClean = rawTicker.trim().toUpperCase().replace(/\.NS$/i, '');
+        const ticker = `${rawClean}.NS`;
 
         setIsProcessing(true);
         setLog(prev => [
@@ -300,14 +290,38 @@ export default function Workspace() {
 
             const resData = await response.json();
             
-            // Wait slightly to ensure background task has written to the DB ledger
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            // If the pipeline itself reported an error, surface it immediately
+            if (!resData.success) {
+                const pipelineError = resData.errors?.[0] || 'Pipeline execution returned no data.';
+                setLog(prev => [
+                    ...prev,
+                    { role: 'sys', text: `[PIPELINE ERROR]: ${pipelineError}`, time: getTime() }
+                ]);
+                // Still try to show a stale record if one exists (so the UI isn't blank)
+                const apiTicker = (resData.ticker as string)?.toUpperCase() || ticker;
+                const { data: staleData } = await supabase
+                    .from('algorithmic_ledger')
+                    .select('*')
+                    .or(`ticker.eq.${apiTicker},ticker.eq.${rawClean}`)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                if (staleData && staleData.length > 0) {
+                    setActiveItem(staleData[0]);
+                    fetchLedger();
+                }
+                return;
+            }
 
-            // Query database ledger for the results
+            // Wait for background ledger write — give it up to 3s
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            // Query ledger using the ticker returned by the API (authoritative)
+            // Try with .NS first, then bare ticker as fallback
+            const apiTicker = (resData.ticker as string)?.toUpperCase() || ticker;
             const { data, error } = await supabase
                 .from('algorithmic_ledger')
                 .select('*')
-                .eq('ticker', ticker)
+                .or(`ticker.eq.${apiTicker},ticker.eq.${rawClean}`)
                 .order('created_at', { ascending: false })
                 .limit(1);
 
@@ -318,9 +332,14 @@ export default function Workspace() {
                 // Refresh full active list
                 fetchLedger();
                 
-                // Set log outputs from the LLM synthesis
-                const reasoning = resData.llm_analysis?.personalized_reasoning ?? [];
-                const finalSummary = reasoning.join(' ') || `Analysis complete. Verdict: ${resData.verdict}`;
+                // Build summary from DB ground truth — this is always reliable
+                const dbVerdict = data[0].gold_verdict?.verdict || resData.verdict || 'N/A';
+                const dbScore = data[0].gold_verdict?.confidence_score != null
+                    ? ` (Confidence: ${(data[0].gold_verdict.confidence_score / 10).toFixed(1)}/10)`
+                    : '';
+                const dbReason = data[0].gold_verdict?.primary_reason || '';
+                // Authoritative one-liner from DB — never use raw LLM reasoning as the summary
+                const finalSummary = `${data[0].ticker} — Verdict: ${dbVerdict}${dbScore}. ${dbReason}`;
                 
                 setLog(prev => [
                     ...prev,
@@ -328,7 +347,14 @@ export default function Workspace() {
                     { role: 'ai', text: finalSummary, time: getTime() }
                 ]);
             } else {
-                throw new Error('Ledger record was not found after execution.');
+                // Pipeline succeeded but ledger write is still pending — use API response data directly
+                setLog(prev => [
+                    ...prev,
+                    { role: 'sys', text: `[STAGE 8]: Pipeline complete. Verdict: ${resData.verdict}`, time: getTime() }
+                ]);
+                // Retry ledger fetch after additional wait
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                fetchLedger();
             }
 
         } catch (err: any) {
@@ -351,16 +377,20 @@ export default function Workspace() {
         const cmd = command.trim();
         setCommand('');
         setLog(prev => [...prev, { role: 'user', text: cmd, time: getTime() }]);
-        setIsProcessing(true);
 
-        // Check if user is typing a direct analyze command
-        if (cmd.toUpperCase().startsWith('/ANALYZE ')) {
-            const tk = cmd.substring(9).trim();
+        // Route to pipeline if: /analyze prefix OR bare ticker pattern (single word, looks like NSE ticker)
+        const isAnalyzeCmd = cmd.toUpperCase().startsWith('/ANALYZE ');
+        const isBareTickerInput = TICKER_PATTERN.test(cmd.trim());
+
+        if (isAnalyzeCmd || isBareTickerInput) {
+            const tk = isAnalyzeCmd ? cmd.substring(9).trim() : cmd.trim();
             if (tk) {
                 await runAnalysis(tk);
                 return;
             }
         }
+
+        setIsProcessing(true);
 
         try {
             // Post to the Tutor stream
@@ -502,11 +532,12 @@ export default function Workspace() {
 
                 {/* Search Explorer — glass.nested form */}
                 <form 
-                    onSubmit={(e) => {
+                    onSubmit={async (e) => {
                         e.preventDefault();
-                        if (searchQuery.trim()) {
-                            runAnalysis(searchQuery);
+                        const q = searchQuery.trim();
+                        if (q && !isProcessing) {
                             setSearchQuery('');
+                            await runAnalysis(q);
                         }
                     }}
                     className="flex-1 max-w-2xl mx-8 relative group"
@@ -516,16 +547,29 @@ export default function Workspace() {
                         style={glass.nested}
                     />
                     <div className="relative flex items-center px-4 py-3 z-10">
-                        <Search className="w-4 h-4 text-white/40 mr-3 group-focus-within:text-emerald-400 transition-colors" />
+                        {isProcessing ? (
+                            <motion.div
+                                className="w-4 h-4 mr-3 rounded-full border-2 border-emerald-500/30 border-t-emerald-500"
+                                animate={{ rotate: 360 }}
+                                transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+                            />
+                        ) : (
+                            <Search className="w-4 h-4 text-white/40 mr-3 group-focus-within:text-emerald-400 transition-colors" />
+                        )}
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Query ticker, sector, or institutional flow..."
-                            className="w-full bg-transparent border-none outline-none text-sm font-bold tracking-tighter text-white placeholder-white/30"
+                            placeholder={isProcessing ? 'Pipeline running — please wait...' : 'Enter NSE ticker (e.g. TCS, RELIANCE, INFY)...'}
+                            disabled={isProcessing}
+                            className="w-full bg-transparent border-none outline-none text-sm font-bold tracking-tighter text-white placeholder-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
                         />
-                        <div className="hidden md:flex px-2 py-1 rounded-[0.5rem] border border-white/10 text-[9px] font-bold tracking-[0.15em] text-white/40 uppercase bg-white/5">
-                            ENTER
+                        <div className={`hidden md:flex px-2 py-1 rounded-[0.5rem] border text-[9px] font-bold tracking-[0.15em] uppercase ${
+                            isProcessing
+                                ? 'border-emerald-500/30 text-emerald-400/50 bg-emerald-500/5'
+                                : 'border-white/10 text-white/40 bg-white/5'
+                        }`}>
+                            {isProcessing ? '...' : 'ENTER'}
                         </div>
                     </div>
                 </form>
@@ -622,14 +666,14 @@ export default function Workspace() {
                                         animate={{ y: [0, -3, 0] }}
                                         transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
                                     >
-                                        {activeItem?.ticker?.split('.')[0] ?? 'RELIANCE'}
+                                        {activeItem?.ticker?.split('.')[0] ?? '—'}
                                     </motion.h1>
                                     <motion.button
                                         onClick={() => {
-                                            const activeTicker = activeItem?.ticker ?? 'RELIANCE.NS';
+                                            if (!activeItem) return;
                                             isWatched
-                                                ? setWatchlist(watchlist.filter(t => t !== activeTicker))
-                                                : setWatchlist([...watchlist, activeTicker]);
+                                                ? setWatchlist(watchlist.filter(t => t !== activeItem.ticker))
+                                                : setWatchlist([...watchlist, activeItem.ticker]);
                                         }}
                                         whileHover={{ scale: 1.03 }}
                                         whileTap={{ scale: 0.97 }}
@@ -644,18 +688,21 @@ export default function Workspace() {
                                     </motion.button>
                                 </div>
                                 <p className="text-white/50 font-bold tracking-tighter text-lg">
-                                    {activeItem ? `${activeItem.ticker} • ${activeItem.timeframe.toUpperCase()}` : 'Reliance Industries Ltd • NSE'}
+                                    {activeItem ? `${activeItem.ticker} • ${activeItem.timeframe.toUpperCase()}` : 'Search a ticker to begin analysis'}
                                 </p>
                             </div>
 
                             <div className="flex flex-col md:items-end">
                                 <div className="inline-flex flex-col items-end gap-1">
-                                    <span className="text-4xl md:text-5xl font-bold tracking-tighter tabular-nums text-white">
-                                        ₹{activePrice.toFixed(2)}
-                                    </span>
-                                    <span className="text-sm font-bold tracking-tighter text-emerald-400">
-                                        +2.34%
-                                    </span>
+                                    {activePrice != null ? (
+                                        <span className="text-4xl md:text-5xl font-bold tracking-tighter tabular-nums text-white">
+                                            ₹{activePrice.toFixed(2)}
+                                        </span>
+                                    ) : (
+                                        <span className="text-4xl md:text-5xl font-bold tracking-tighter tabular-nums text-white/20">
+                                            —
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -691,68 +738,75 @@ export default function Workspace() {
 
                             {/* Chart */}
                             <div className="h-[200px] w-full relative">
-                                <AnimatePresence mode="wait">
-                                    <motion.svg
-                                        key={timeframe}
-                                        viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-                                        className="w-full h-full overflow-visible"
-                                        preserveAspectRatio="none"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        exit={{ opacity: 0 }}
-                                        transition={{ duration: 0.3 }}
-                                    >
-                                        <defs>
-                                            <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-                                                <stop offset="0%" stopColor="#0D9488" />
-                                                <stop offset="100%" stopColor="#10B981" />
-                                            </linearGradient>
-                                            <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="0%" stopColor="#10B981" stopOpacity="0.20" />
-                                                <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
-                                            </linearGradient>
-                                        </defs>
-
-                                        {[0.25, 0.5, 0.75].map((f) => (
-                                            <line
-                                                key={f}
-                                                x1="0" x2={CHART_W}
-                                                y1={CHART_H * f} y2={CHART_H * f}
-                                                stroke="rgba(255,255,255,0.05)" strokeWidth="1"
-                                            />
-                                        ))}
-
-                                        <motion.path
-                                            d={chartData.area} fill="url(#areaGrad)"
-                                            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-                                            transition={{ duration: 0.8, delay: 0.3 }}
-                                        />
-                                        <motion.path
-                                            d={chartData.line} fill="none"
-                                            stroke="url(#lineGrad)" strokeWidth="2.5" strokeLinecap="round"
-                                            initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
-                                            transition={{ duration: 1.5, ease: 'easeInOut' }}
-                                            className="drop-shadow-[0_4px_12px_rgba(16,185,129,0.3)]"
-                                        />
-                                    </motion.svg>
-                                </AnimatePresence>
-
-                                <motion.div
-                                    style={{
-                                        left: `${(chartData.last.x / CHART_W) * 100}%`,
-                                        top:  `${(chartData.last.y / CHART_H) * 100}%`,
-                                    }}
-                                    className="absolute -translate-y-1/2 -translate-x-1/2"
-                                >
-                                    <div className="relative flex items-center justify-center">
+                                {chartData ? (
+                                    <>
+                                        <AnimatePresence mode="wait">
+                                            <motion.svg
+                                                key={timeframe}
+                                                viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                                                className="w-full h-full overflow-visible"
+                                                preserveAspectRatio="none"
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                exit={{ opacity: 0 }}
+                                                transition={{ duration: 0.3 }}
+                                            >
+                                                <defs>
+                                                    <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                                                        <stop offset="0%" stopColor="#0D9488" />
+                                                        <stop offset="100%" stopColor="#10B981" />
+                                                    </linearGradient>
+                                                    <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="0%" stopColor="#10B981" stopOpacity="0.20" />
+                                                        <stop offset="100%" stopColor="#10B981" stopOpacity="0" />
+                                                    </linearGradient>
+                                                </defs>
+                                                {[0.25, 0.5, 0.75].map((f) => (
+                                                    <line
+                                                        key={f}
+                                                        x1="0" x2={CHART_W}
+                                                        y1={CHART_H * f} y2={CHART_H * f}
+                                                        stroke="rgba(255,255,255,0.05)" strokeWidth="1"
+                                                    />
+                                                ))}
+                                                <motion.path
+                                                    d={chartData.area} fill="url(#areaGrad)"
+                                                    initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                                                    transition={{ duration: 0.8, delay: 0.3 }}
+                                                />
+                                                <motion.path
+                                                    d={chartData.line} fill="none"
+                                                    stroke="url(#lineGrad)" strokeWidth="2.5" strokeLinecap="round"
+                                                    initial={{ pathLength: 0 }} animate={{ pathLength: 1 }}
+                                                    transition={{ duration: 1.5, ease: 'easeInOut' }}
+                                                    className="drop-shadow-[0_4px_12px_rgba(16,185,129,0.3)]"
+                                                />
+                                            </motion.svg>
+                                        </AnimatePresence>
                                         <motion.div
-                                            animate={{ scale: [1, 2.5, 1], opacity: [0.8, 0, 0.8] }}
-                                            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                                            className="absolute w-4 h-4 rounded-full bg-emerald-400 blur-[2px]"
-                                        />
-                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 relative z-10 shadow-[0_0_10px_rgba(16,185,129,1)]" />
+                                            style={{
+                                                left: `${(chartData.last.x / CHART_W) * 100}%`,
+                                                top:  `${(chartData.last.y / CHART_H) * 100}%`,
+                                            }}
+                                            className="absolute -translate-y-1/2 -translate-x-1/2"
+                                        >
+                                            <div className="relative flex items-center justify-center">
+                                                <motion.div
+                                                    animate={{ scale: [1, 2.5, 1], opacity: [0.8, 0, 0.8] }}
+                                                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                                                    className="absolute w-4 h-4 rounded-full bg-emerald-400 blur-[2px]"
+                                                />
+                                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 relative z-10 shadow-[0_0_10px_rgba(16,185,129,1)]" />
+                                            </div>
+                                        </motion.div>
+                                    </>
+                                ) : (
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                        <p className="text-xs font-bold tracking-[0.15em] uppercase text-white/20">
+                                            Search a ticker to load price action
+                                        </p>
                                     </div>
-                                </motion.div>
+                                )}
                             </div>
 
                             <div className="flex justify-between mt-3">
@@ -777,62 +831,75 @@ export default function Workspace() {
                                     Gold Layer · System Verdict
                                 </p>
 
-                                <div className="flex items-center gap-4 mb-4">
-                                    <h3 className="text-2xl font-bold tracking-tighter text-white">
-                                        {verdictData.verdict}
-                                    </h3>
-                                    <div
-                                        className="flex flex-col items-center justify-center px-4 py-2 rounded-[1.25rem]"
-                                        style={glass.nested}
-                                    >
-                                        <span className="font-bold tracking-tighter text-xl text-white tabular-nums leading-none">
-                                            {verdictData.score.toFixed(1)}
-                                        </span>
-                                        <span className="text-[9px] font-bold tracking-[0.15em] text-emerald-400 uppercase mt-1">
-                                            Score
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <p className="text-white/55 font-bold tracking-tighter text-base leading-relaxed mb-6 max-w-xl">
-                                    {verdictData.reason}
-                                </p>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {/* Gates list */}
-                                    <div className="flex flex-col gap-3">
-                                        <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
-                                            Hard Gates Cleared
-                                        </h4>
-                                        {verdictData.gates.map((g, i) => (
-                                            <div key={i} className="flex justify-between items-center py-2 border-b border-white/5">
-                                                <span className="text-sm font-bold tracking-tighter text-white/70">{g.name}</span>
-                                                <span className="text-[10px] font-bold tracking-[0.15em] text-emerald-400 uppercase">{g.status}</span>
+                                {verdictData ? (
+                                    <>
+                                        <div className="flex items-center gap-4 mb-4">
+                                            <h3 className="text-2xl font-bold tracking-tighter text-white">
+                                                {verdictData.verdict}
+                                            </h3>
+                                            <div
+                                                className="flex flex-col items-center justify-center px-4 py-2 rounded-[1.25rem]"
+                                                style={glass.nested}
+                                            >
+                                                <span className="font-bold tracking-tighter text-xl text-white tabular-nums leading-none">
+                                                    {verdictData.score.toFixed(1)}
+                                                </span>
+                                                <span className="text-[9px] font-bold tracking-[0.15em] text-emerald-400 uppercase mt-1">
+                                                    Score
+                                                </span>
                                             </div>
-                                        ))}
-                                    </div>
-
-                                    {/* Trade setup */}
-                                    {verdictData.setup && (
-                                        <div className="rounded-[1.5rem] p-5 relative overflow-hidden" style={glass.nested}>
-                                            <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
-                                            <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-3 mt-1">
-                                                Trade Architecture
-                                            </h4>
-                                            {[
-                                                { label: 'Entry Zone',  val: `₹${verdictData.setup.entry_low} – ${verdictData.setup.entry_high}`, cls: 'text-white' },
-                                                { label: 'Stop Loss',   val: `₹${verdictData.setup.stop_loss}`, cls: 'text-red-400' },
-                                                { label: 'Targets',     val: `₹${verdictData.setup.target_1} / ${verdictData.setup.target_2}`, cls: 'text-emerald-400' },
-                                                { label: 'R/R Ratio',   val: `${verdictData.setup.rr_ratio}×`, cls: 'text-white/70' },
-                                            ].map(({ label, val, cls }) => (
-                                                <div key={label} className="flex justify-between items-center py-1.5">
-                                                    <span className="text-sm font-bold tracking-tighter text-white/55">{label}</span>
-                                                    <span className={`text-sm font-bold tracking-tighter tabular-nums ${cls}`}>{val}</span>
-                                                </div>
-                                            ))}
                                         </div>
-                                    )}
-                                </div>
+
+                                        <p className="text-white/55 font-bold tracking-tighter text-base leading-relaxed mb-6 max-w-xl">
+                                            {verdictData.reason}
+                                        </p>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Gates list */}
+                                            <div className="flex flex-col gap-3">
+                                                <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
+                                                    Hard Gates Cleared
+                                                </h4>
+                                                {verdictData.gates.map((g, i) => (
+                                                    <div key={i} className="flex justify-between items-center py-2 border-b border-white/5">
+                                                        <span className="text-sm font-bold tracking-tighter text-white/70">{g.name}</span>
+                                                        <span className={`text-[10px] font-bold tracking-[0.15em] uppercase ${
+                                                            g.status === 'PASS' ? 'text-emerald-400' :
+                                                            g.status === 'WARN' ? 'text-amber-400' : 'text-red-400'
+                                                        }`}>{g.status}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Trade setup */}
+                                            {verdictData.setup && (
+                                                <div className="rounded-[1.5rem] p-5 relative overflow-hidden" style={glass.nested}>
+                                                    <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-emerald-500/40 to-transparent" />
+                                                    <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400 mb-3 mt-1">
+                                                        Trade Architecture
+                                                    </h4>
+                                                    {[
+                                                        { label: 'Entry Zone',  val: `₹${verdictData.setup.entry_low} – ${verdictData.setup.entry_high}`, cls: 'text-white' },
+                                                        { label: 'Stop Loss',   val: `₹${verdictData.setup.stop_loss}`, cls: 'text-red-400' },
+                                                        { label: 'Targets',     val: `₹${verdictData.setup.target_1} / ${verdictData.setup.target_2}`, cls: 'text-emerald-400' },
+                                                        { label: 'R/R Ratio',   val: `${verdictData.setup.rr_ratio}×`, cls: 'text-white/70' },
+                                                    ].map(({ label, val, cls }) => (
+                                                        <div key={label} className="flex justify-between items-center py-1.5">
+                                                            <span className="text-sm font-bold tracking-tighter text-white/55">{label}</span>
+                                                            <span className={`text-sm font-bold tracking-tighter tabular-nums ${cls}`}>{val}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex-1 flex items-center justify-center py-12">
+                                        <p className="text-sm font-bold tracking-[0.12em] uppercase text-white/20">
+                                            Run a ticker analysis to load verdict
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -843,18 +910,26 @@ export default function Workspace() {
                                     Bronze Layer · Raw Ingestion
                                 </p>
                             </div>
-                            <div className="grid grid-cols-2 gap-3 flex-1 content-start">
-                                {displayMetrics.map((data, i) => (
-                                    <div key={i} className="flex flex-col p-4 rounded-[1.25rem]" style={glass.nested}>
-                                        <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
-                                            {data.label}
-                                        </span>
-                                        <span className="text-xl font-bold tracking-tighter tabular-nums text-white">
-                                            {data.value}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
+                            {displayMetrics ? (
+                                <div className="grid grid-cols-2 gap-3 flex-1 content-start">
+                                    {displayMetrics.map((data, i) => (
+                                        <div key={i} className="flex flex-col p-4 rounded-[1.25rem]" style={glass.nested}>
+                                            <span className="text-[10px] font-bold tracking-[0.15em] uppercase text-white/40 mb-1">
+                                                {data.label}
+                                            </span>
+                                            <span className="text-xl font-bold tracking-tighter tabular-nums text-white">
+                                                {data.value}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="flex-1 flex items-center justify-center">
+                                    <p className="text-xs font-bold tracking-[0.12em] uppercase text-white/20 text-center">
+                                        No data loaded
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

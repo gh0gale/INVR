@@ -9,7 +9,11 @@ logger = logging.getLogger(__name__)
 async def fetch_yfinance_history(ticker: str, period: str, interval: str) -> pd.DataFrame:
     """Fetches OHLCV data. Adds .NS for Indian markets. Uses exact-date fallback to prevent yfinance glitches."""
     def _fetch():
-        clean_ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+        # Index tickers (^CNXFIN, ^NSEBANK, etc.) must never get .NS appended
+        if ticker.startswith("^"):
+            clean_ticker = ticker
+        else:
+            clean_ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
         stock = yf.Ticker(clean_ticker)
         
         # Attempt 1: Standard fetch
@@ -65,7 +69,11 @@ async def fetch_nse_circuit_status(ticker: str, current_price: float) -> str:
 async def fetch_yfinance_fundamentals(ticker: str) -> dict:
     """Fetches base info + deep multi-year financial statements from yfinance."""
     def _fetch():
-        clean_ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
+        # Index tickers (^CNXFIN, ^NSEBANK, etc.) must never get .NS appended
+        if ticker.startswith("^"):
+            clean_ticker = ticker
+        else:
+            clean_ticker = ticker if ticker.endswith(".NS") else f"{ticker}.NS"
         stock = yf.Ticker(clean_ticker)
         info = stock.info
         
