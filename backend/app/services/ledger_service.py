@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 # Update this whenever you change gate thresholds!
 PIPELINE_VERSION = "v1.0.0"
 
-async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdict_draft: dict):
+async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdict_draft: dict, llm_output: dict = None):
     """
     Handles the Hybrid Ledger logic: 
     1. Checks if the exact prediction exists today.
@@ -22,6 +22,10 @@ async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdic
     ticker = verdict_draft.get("ticker")
     timeframe = verdict_draft.get("timeframe")
     today_date = datetime.utcnow().date().isoformat()
+
+    # Safely embed the LLM output into the gold_verdict payload so it persists
+    if llm_output:
+        verdict_draft["llm_analysis"] = llm_output
 
     logger.info("Syncing %s prediction for %s (v%s)...", timeframe.upper(), ticker, PIPELINE_VERSION)
 

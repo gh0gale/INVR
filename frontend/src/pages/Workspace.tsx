@@ -164,12 +164,12 @@ export default function Workspace() {
 
     // Display Metrics — strictly from activeItem
     const displayMetrics = activeItem ? [
-        { label: 'Current Price', value: `₹${activeItem.silver_state.current_price?.toFixed(2) ?? 'N/A'}` },
-        { label: 'Current Volume', value: activeItem.silver_state.current_volume?.toLocaleString() ?? 'N/A' },
-        { label: 'RSI (14)', value: activeItem.silver_state.rsi_14?.toFixed(2) ?? 'N/A' },
-        { label: 'ATR (14)', value: activeItem.silver_state.atr_14 != null ? `₹${activeItem.silver_state.atr_14.toFixed(2)}` : 'N/A' },
-        { label: 'SMA (20)', value: activeItem.silver_state.sma_20 != null ? `₹${activeItem.silver_state.sma_20.toFixed(2)}` : 'N/A' },
-        { label: 'SMA (50)', value: activeItem.silver_state.sma_50 != null ? `₹${activeItem.silver_state.sma_50.toFixed(2)}` : 'N/A' },
+        { label: 'Current Price', value: `₹${activeItem.silver_state.current_price?.toFixed(2) ?? 'N/A'}`, desc: 'Latest closing/active price' },
+        { label: 'Current Volume', value: activeItem.silver_state.current_volume?.toLocaleString() ?? 'N/A', desc: 'Trading activity for the period' },
+        { label: 'RSI (14)', value: activeItem.silver_state.rsi_14?.toFixed(2) ?? 'N/A', desc: 'Momentum: >70 Overbought, <30 Oversold' },
+        { label: 'ATR (14)', value: activeItem.silver_state.atr_14 != null ? `₹${activeItem.silver_state.atr_14.toFixed(2)}` : 'N/A', desc: 'Average price volatility' },
+        { label: 'SMA (20)', value: activeItem.silver_state.sma_20 != null ? `₹${activeItem.silver_state.sma_20.toFixed(2)}` : 'N/A', desc: 'Short-term trend line' },
+        { label: 'SMA (50)', value: activeItem.silver_state.sma_50 != null ? `₹${activeItem.silver_state.sma_50.toFixed(2)}` : 'N/A', desc: 'Medium-term support/resistance' },
     ] : null;
 
     // System Verdict — strictly from activeItem
@@ -188,7 +188,8 @@ export default function Workspace() {
             target_1: activeItem.gold_verdict.trade_setup.target_1,
             target_2: activeItem.gold_verdict.trade_setup.target_2,
             rr_ratio: activeItem.gold_verdict.trade_setup.risk_reward_ratio,
-        } : null
+        } : null,
+        llm_analysis: activeItem.gold_verdict.llm_analysis || null
     } : null;
 
     // Load active ledger — deduplicated by ticker, capped to 5 most recent unique tickers
@@ -853,6 +854,60 @@ export default function Workspace() {
                                         <p className="text-white/55 font-bold tracking-tighter text-base leading-relaxed mb-6 max-w-xl">
                                             {verdictData.reason}
                                         </p>
+
+                                        {/* LLM Analysis Section */}
+                                        {verdictData.llm_analysis && (
+                                            <div className="mb-8 flex flex-col gap-5">
+                                                {/* Investment Thesis */}
+                                                {verdictData.llm_analysis.personalized_reasoning && verdictData.llm_analysis.personalized_reasoning.length > 0 && (
+                                                    <div className="flex flex-col gap-2">
+                                                        <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400">Investment Thesis & Profile Alignment</h4>
+                                                        <div className="text-white/70 text-sm leading-relaxed space-y-2">
+                                                            {verdictData.llm_analysis.personalized_reasoning.filter((line: string) => !line.toUpperCase().includes('INVESTMENT THESIS') && !line.toUpperCase().includes('QUANTITATIVE SCORECARD') && !line.toUpperCase().includes('OVERALL VERDICT')).map((line: string, i: number) => (
+                                                                <p key={i}>{line.replace(/^- /, '')}</p>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* What to Watch */}
+                                                {verdictData.llm_analysis.what_to_watch && verdictData.llm_analysis.what_to_watch.length > 0 && (
+                                                    <div className="flex flex-col gap-2">
+                                                        <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-emerald-400">Actionable Conditions</h4>
+                                                        <ul className="text-white/70 text-sm leading-relaxed list-disc list-outside ml-4 space-y-1">
+                                                            {verdictData.llm_analysis.what_to_watch.map((line: string, i: number) => (
+                                                                <li key={i}>{line.replace(/^- /, '')}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Risk Warning */}
+                                                {verdictData.llm_analysis.risk_warning && (
+                                                    <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10">
+                                                        <h4 className="text-[11px] font-bold tracking-[0.15em] uppercase text-red-400 mb-1">Risk Warning</h4>
+                                                        <p className="text-red-200/80 text-sm leading-relaxed">{verdictData.llm_analysis.risk_warning}</p>
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Tutor Triggers */}
+                                                {verdictData.llm_analysis.tutor_triggers && verdictData.llm_analysis.tutor_triggers.length > 0 && (
+                                                    <div className="flex flex-wrap gap-2 mt-2">
+                                                        {verdictData.llm_analysis.tutor_triggers.map((trigger: string, i: number) => (
+                                                            <button 
+                                                                key={i}
+                                                                onClick={() => {
+                                                                    setCommand(`Explain ${trigger} and how it impacts this stock.`);
+                                                                }}
+                                                                className="px-4 py-2 rounded-full bg-white/5 border border-white/10 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:text-emerald-400 transition-all text-xs font-bold text-white/80 tracking-wide"
+                                                            >
+                                                                Ask Tutor: {trigger}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {/* Gates list */}
