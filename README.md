@@ -10,53 +10,107 @@ INVR is a comprehensive algorithmic portfolio intelligence platform that fuses q
 
 ```mermaid
 flowchart TB
-    subgraph UI["Liquid Glass UI (React)"]
+    classDef layout fill:#030508,stroke:#10B981,stroke-width:2px,color:#fff;
+    classDef panel fill:#111827,stroke:#374151,stroke-width:1px,color:#d1d5db;
+    classDef highlight fill:#065f46,stroke:#34d399,stroke-width:2px,color:#fff;
+    
+    subgraph UI["📱 Liquid Glass UI (React/Vite)"]
         direction TB
-        Top["Top Nav (Search / Logo)"]
-        subgraph Main["Workspace"]
+        TopNav["🔍 Search Bar & Brand Nav"]:::panel
+        
+        subgraph Workspace["Main Workspace Grid"]
             direction LR
-            Side["Sidebar (Ledger / Watchlist)"]
-            subgraph Content["Active Asset View"]
+            
+            subgraph LeftCol["Left Panel"]
                 direction TB
-                Chart["Dynamic Price Chart"]
-                Metrics["Silver Metrics Grid"]
-                Verdict["Gold Verdict & Trade Setup"]
+                Ledger["📊 Algorithmic Ledger (History)"]:::panel
+                Watchlist["⭐ Watchlist (Favorites)"]:::panel
             end
-            Term["AI Tutor Terminal (SSE Chat)"]
-            Side --- Content --- Term
+            
+            subgraph CenterCol["Active Asset Analysis"]
+                direction TB
+                Chart["📈 Catmull-Rom Price Chart & Splines"]:::panel
+                Metrics["⚙️ Silver Metrics Grid (RSI, ATR, SMAs)"]:::panel
+                Verdict["🥇 Gold Verdict & ATR Trade Setup"]:::highlight
+            end
+            
+            subgraph RightCol["AI Interaction"]
+                direction TB
+                Terminal["🤖 SSE Chat Terminal (Tutor)"]:::highlight
+                Input["⌨️ Command Input (/analyze)"]:::panel
+            end
+            
+            LeftCol --> CenterCol
+            CenterCol --> RightCol
         end
-        Top --- Main
+        
+        TopNav --> Workspace
     end
+    class UI layout
 ```
 
 ### AI Tutor Terminal
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant F as Frontend (Terminal)
-    participant B as FastAPI (Orchestrator)
-    participant L as Ollama (Local LLM)
+    autonumber
+    actor U as 🧑‍💻 User
+    participant UI as 📱 React UI
+    participant API as ⚙️ FastAPI (Tutor)
+    participant LG as 🧠 LangGraph Orchestrator
+    participant DB as 🗄️ Supabase
+    participant LLM as 🤖 Ollama (Llama 3)
     
-    U->>F: Types query (e.g., "Analyze RELIANCE")
-    F->>B: POST /api/v1/tutor/chat/stream
-    B->>B: Inject Silver & Gold Context
-    B->>L: Generate response stream
-    L-->>B: Yield tokens
-    B-->>F: SSE Stream (Server-Sent Events)
-    F-->>U: Typewriter effect display
+    U->>UI: Types "/analyze RELIANCE.NS"
+    UI->>API: POST /api/v1/tutor/chat/stream (JWT)
+    API->>DB: Fetch Active Profile (Risk: Moderate)
+    DB-->>API: Profile Context
+    
+    API->>LG: Invoke State Machine
+    note right of LG: Context Injection:<br/>1. Silver Metrics<br/>2. Gold Verdict<br/>3. User Constraints
+    
+    alt is Command Route
+        LG->>LG: Extract Intent & Route to Quant Agent
+    else is General Chat Route
+        LG->>LG: Route to Synthesizer Agent
+    end
+    
+    LG->>LLM: Stream Inference Request
+    
+    loop Server-Sent Events (SSE)
+        LLM-->>LG: Yield raw tokens
+        LG-->>API: Format chunk
+        API-->>UI: stream text chunk
+        UI-->>U: Typewriter effect display
+    end
 ```
 
 ### Architecture
 
 ```mermaid
 flowchart LR
-    Client["React Frontend"] <-->|REST / SSE| API["FastAPI Backend"]
-    API --> Quant["Tri-Layer Quant Pipeline"]
-    API <--> LLM["LangGraph / Ollama"]
-    API <--> DB[("Supabase DB")]
-    Engine["Engine Room Scripts"] --> DB
-    Quant -.-> DB
+    classDef frontend fill:#1e3a8a,stroke:#3b82f6,color:#fff;
+    classDef backend fill:#064e3b,stroke:#10b981,color:#fff;
+    classDef db fill:#4c1d95,stroke:#8b5cf6,color:#fff;
+    classDef engine fill:#7f1d1d,stroke:#ef4444,color:#fff;
+    
+    Client["📱 React/Vite UI"]:::frontend
+    
+    subgraph Cloud["INVR Infrastructure"]
+        API["⚙️ FastAPI Gateway"]:::backend
+        Quant["🧮 Tri-Layer Quant Engine"]:::backend
+        LLM["🧠 LangGraph/Ollama"]:::backend
+        DB[("🗄️ Supabase (PostgreSQL)")]:::db
+        Engine["⚙️ Engine Room (Cron)"]:::engine
+        
+        API --> Quant
+        API <--> LLM
+        API <--> DB
+        Quant -.-> DB
+        Engine --> DB
+    end
+    
+    Client <-->|REST & SSE Streams| API
 ```
 
 ## Key Features
@@ -104,34 +158,46 @@ Meet **Aarav**, an intermediate swing trader looking to evaluate Reliance Indust
 
 ```mermaid
 flowchart TD
-    Client["📱 React Frontend (Liquid Glass)"]
+    classDef bronze fill:#b45309,stroke:#fbbf24,color:#fff;
+    classDef silver fill:#475569,stroke:#94a3b8,color:#fff;
+    classDef gold fill:#854d0e,stroke:#facc15,color:#fff;
+    classDef base fill:#1e293b,stroke:#475569,color:#fff;
+
+    User((User)) -->|Input| Router{"LangGraph Router"}
     
-    subgraph Backend ["⚙️ FastAPI Backend"]
+    subgraph TriLayer ["Tri-Layer Quant Pipeline"]
         direction TB
-        B["🥉 Bronze Layer (Ingestion)"]
-        S["🥈 Silver Layer (Vectorized Math)"]
-        G["🥇 Gold Layer (Deterministic Logic)"]
-        LLM["🧠 LLM Orchestrator (LangGraph/Ollama)"]
+        B["🥉 Bronze Layer<br>(Data Ingestion)"]:::bronze
+        S["🥈 Silver Layer<br>(Vectorized Math)"]:::silver
+        G["🥇 Gold Layer<br>(Hard Gates & Setups)"]:::gold
         
-        B --> S --> G
-        G -.-> LLM
+        B -->|OHLCV & Fundamentals| S
+        S -->|RSI, ATR, SMAs, CAGR| G
     end
     
-    subgraph Database ["🗄️ Supabase (PostgreSQL)"]
-        Profiles[("Users / Profiles")]
-        Ledger[("Algorithmic Ledger")]
-        Interactions[("Prediction Interactions")]
+    subgraph AI ["LLM Synthesizer"]
+        direction TB
+        Context["Context Builder<br>(Injects Profiles & Math)"]:::base
+        Ollama["Local Ollama<br>(Llama 3 Inference)"]:::base
+        Context --> Ollama
     end
     
-    subgraph EngineRoom ["🚀 Engine Room (Cron Scripts)"]
-        GL["grade_ledger.py"]
-        AD["analyze_drift.py"]
-        SL["simulate_live_history.py"]
+    Router -->|If Analysis Intent| TriLayer
+    Router -->|If Chat Intent| AI
+    TriLayer -->|Injects Verdict| Context
+    
+    subgraph DataLayer ["Persistence & Engine Room"]
+        direction LR
+        DB[("Supabase Ledger")]:::base
+        Drift["Drift Analyzer<br>(Statistical Skew)"]:::base
+        Grader["Ledger Grader<br>(Matured Trades)"]:::base
+        
+        DB <--> Grader
+        Grader --> Drift
     end
     
-    Client <-->|REST / SSE Streams| Backend
-    Backend --> Database
-    Database <--> EngineRoom
+    G -.->|Logs Transaction| DB
+    Ollama -->|Streams Response| User
 ```
 
 ## Core Systems Deep Dive
