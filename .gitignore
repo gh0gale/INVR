@@ -72,3 +72,6 @@ htmlcov/
 .coverage
 .coverage.*
 .hypothesis/
+# --- Markdown Files ---
+*.md
+
