@@ -14,24 +14,24 @@ flowchart TB
     classDef panel fill:#111827,stroke:#374151,stroke-width:1px,color:#d1d5db;
     classDef highlight fill:#065f46,stroke:#34d399,stroke-width:2px,color:#fff;
     
-    subgraph UI["📱 Liquid Glass UI (React/Vite)"]
+    subgraph UI["(React/Vite)"]
         direction TB
-        TopNav["🔍 Search Bar & Brand Nav"]:::panel
+        TopNav[" Search Bar & Brand Nav"]:::panel
         
         subgraph Workspace["Main Workspace Grid"]
             direction LR
             
             subgraph LeftCol["Left Panel"]
                 direction TB
-                Ledger["📊 Algorithmic Ledger (History)"]:::panel
-                Watchlist["⭐ Watchlist (Favorites)"]:::panel
+                Ledger[" Algorithmic Ledger (History)"]:::panel
+                Watchlist[" Watchlist (Favorites)"]:::panel
             end
             
             subgraph CenterCol["Active Asset Analysis"]
                 direction TB
-                Chart["📈 Catmull-Rom Price Chart & Splines"]:::panel
-                Metrics["⚙️ Silver Metrics Grid (RSI, ATR, SMAs)"]:::panel
-                Verdict["🥇 Gold Verdict & ATR Trade Setup"]:::highlight
+                Chart[" Catmull-Rom Price Chart & Splines"]:::panel
+                Metrics[" Silver Metrics Grid (RSI, ATR, SMAs)"]:::panel
+                Verdict[" Gold Verdict & ATR Trade Setup"]:::highlight
             end
             
             subgraph RightCol["AI Interaction"]
@@ -54,12 +54,12 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as 🧑‍💻 User
-    participant UI as 📱 React UI
-    participant API as ⚙️ FastAPI (Tutor)
-    participant LG as 🧠 LangGraph Orchestrator
-    participant DB as 🗄️ Supabase
-    participant LLM as 🤖 Ollama (Llama 3)
+    actor U as  User
+    participant UI as  React UI
+    participant API as  FastAPI (Tutor)
+    participant LG as  LangGraph Orchestrator
+    participant DB as  Supabase
+    participant LLM as  Ollama (Llama 3)
     
     U->>UI: Types "/analyze RELIANCE.NS"
     UI->>API: POST /api/v1/tutor/chat/stream (JWT)
@@ -94,14 +94,14 @@ flowchart LR
     classDef db fill:#4c1d95,stroke:#8b5cf6,color:#fff;
     classDef engine fill:#7f1d1d,stroke:#ef4444,color:#fff;
     
-    Client["📱 React/Vite UI"]:::frontend
+    Client[" React/Vite UI"]:::frontend
     
     subgraph Cloud["INVR Infrastructure"]
-        API["⚙️ FastAPI Gateway"]:::backend
-        Quant["🧮 Tri-Layer Quant Engine"]:::backend
-        LLM["🧠 LangGraph/Ollama"]:::backend
-        DB[("🗄️ Supabase (PostgreSQL)")]:::db
-        Engine["⚙️ Engine Room (Cron)"]:::engine
+        API[" FastAPI Gateway"]:::backend
+        Quant[" Tri-Layer Quant Engine"]:::backend
+        LLM[" LangGraph/Ollama"]:::backend
+        DB[(" Supabase (PostgreSQL)")]:::db
+        Engine[" Engine Room (Cron)"]:::engine
         
         API --> Quant
         API <--> LLM
@@ -128,7 +128,7 @@ flowchart LR
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/INVR.git
+git clone https://github.com/gh0gale/INVR.git
 cd INVR
 
 # Set up Python backend (FastAPI)
@@ -305,7 +305,7 @@ python -m scripts.analyze_drift
 2. **Self-Evaluating** - The Engine Room grades the system's own past predictions, automatically highlighting drift and closing the feedback loop on algorithmic accuracy.
 3. **Immersive UI** - The Liquid Glass design system provides a premium, low-latency environment featuring custom graphics that feel like a next-generation institutional trading terminal.
 4. **Contextually Aware** - The LangGraph-powered AI Tutor remembers your financial goals, risk profile, and the mathematical reality of the active asset being analyzed.
-5. **No Cloud LLM Lock-in** - Architected to operate natively with local models (e.g., Llama 3 via Ollama) for maximum data privacy and zero ongoing inference costs.
+
 
 ## License
 
