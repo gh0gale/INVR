@@ -1,12 +1,15 @@
 import logging
 import json
 import numpy as np
+from typing import Dict, Any
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
-from typing import Dict, Any
+
+
+from app.services.vector_store import query_ledger_history
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +78,7 @@ async def news_tool_node(state: TutorState) -> TutorState:
 # --- 3. GENERATION NODE ---
 async def generation_node(state: TutorState, config: RunnableConfig) -> TutorState:
     mode = state["routed_mode"]
+    ticker = state["analysis_state"].get("ticker", "UNKNOWN")
     logger.info("Generating response via mode: %s", mode.upper())
     
     llm = ChatOllama(model="llama3.1", temperature=0.3) 
@@ -83,16 +87,22 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
     if len(analysis_state_str) > 2000:
         analysis_state_str = analysis_state_str[:1997] + "..."
 
+    # --- PHASE 2: CONTEXT HYDRODYNAMICS (Vector Retrieval) ---
+    historical_context = await query_ledger_history(ticker)
+
     sys_instruction = f"""You are an elite quantitative financial tutor.
     User Profile: Level: {state['user_profile'].get('experience_level')}, Goal: {state['user_profile'].get('goal')}.
     
     CRITICAL DIRECTIVES:
     1. QUOTE-FIRST: When discussing the specific stock, anchor your answer using exact numbers from the Analysis State. 
     2. ANALOGY-MAPPING: Tailor analogies to the user's experience level.
-    3. GRACEFUL FALLBACK: If the user asks to define a financial term, ALWAYS define it using a clear example. If the exact value for that metric is NOT in the Analysis State, provide the definition, but clarify: "This specific metric is not actively highlighted in the current analysis for this stock." Do not refuse to explain a concept.
+    3. GRACEFUL FALLBACK: If the user asks to define a financial term, ALWAYS define it using a clear example.
     
     --- CURRENT ANALYSIS STATE ---
     {analysis_state_str}
+    
+    --- HISTORICAL ALGORITHMIC CONTEXT ---
+    {historical_context}
     """
     
     if mode == "news" and state.get("tool_data"):
@@ -101,9 +111,9 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
     elif mode == "definition":
         sys_instruction += "\nProvide a clear explanation of the requested term. Instead of repeating the overall stock verdict, use a brief, clear numeric example to show how the math works."
     elif mode == "portfolio":
-        sys_instruction += "\nEvaluate the user's question explicitly against their existing portfolio allocations and stated goals."
+        sys_instruction += "\nEvaluate the user's question explicitly against their existing portfolio allocations and stated goals. Reference historical trends if applicable."
     elif mode == "scenario":
-        sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of the triggers and why they mathematically matter."
+        sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of the triggers and why they mathematically matter. Cross-reference past historical reasoning to highlight trend shifts."
 
     chat_history = state["messages"][-10:]
     messages = [SystemMessage(content=sys_instruction)] + chat_history

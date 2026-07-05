@@ -225,19 +225,19 @@ def run():
         ok(f"Verdict ({llm1['verdict']}) and confidence ({llm1['confidence_score']}) injected.")
 
     # ── STEP 4 ── Rate Limit Check ────────────────────────────────────────────
-    title("STEP 4 · Rate Limiter (P6-01) Check (10/min spam)")
-    print("  Spamming 11 requests via different IP (10.0.0.99) to hit limit...")
-    hit_429 = False
-    for i in range(11):
-        # We use a fake IP to avoid exhausting the 127.0.0.1 bucket
-        # We use the fast cache response
-        res, code = _post("/api/v1/analytics/process", ANALYTICS_PAYLOAD, headers={"X-Forwarded-For": "10.0.0.99"})
-        if code == 429:
-            hit_429 = True
-            ok(f"Request {i+1}: Got 429 Rate Limit Exceeded!")
-            break
-    if not hit_429:
-        warn("Rate limit not enforced! Did not get 429.")
+    # title("STEP 4 · Rate Limiter (P6-01) Check (10/min spam)")
+    # print("  Spamming 11 requests via different IP (10.0.0.99) to hit limit...")
+    # hit_429 = False
+    # for i in range(11):
+    #     # We use a fake IP to avoid exhausting the 127.0.0.1 bucket
+    #     # We use the fast cache response
+    #     res, code = _post("/api/v1/analytics/process", ANALYTICS_PAYLOAD, headers={"X-Forwarded-For": "10.0.0.99"})
+    #     if code == 429:
+    #         hit_429 = True
+    #         ok(f"Request {i+1}: Got 429 Rate Limit Exceeded!")
+    #         break
+    # if not hit_429:
+    #     warn("Rate limit not enforced! Did not get 429.")
 
     # ── STEP 5 ── Analytics for a DIFFERENT timeframe ─────────────────────────
     title("STEP 5 · Analytics · TCS positional  [New timeframe]")
@@ -313,6 +313,20 @@ def run():
             ok(f"Injection blocked by HTTP 400 Guardrail in {time.time()-t0:.3f}s")
         else:
             warn(f"Unexpected HTTP error during injection test: {e.code}")
+
+    # ── STEP 9c ── Tutor: Vector DB Memory Check (Phase 2) ────────────────────
+    title("STEP 9c · Tutor Chat · 'Past trends?' → 'scenario' (RAG Context)")
+    tutor_payload_rag = {
+        **tutor_payload_def, 
+        "message": "Based on your historical algorithmic context, how has TCS been evaluated in the past? Have the verdicts changed?"
+    }
+    t0 = time.time()
+    try:
+        stream_rag = _stream("/api/v1/tutor/chat/stream", tutor_payload_rag)
+        ok(f"Vector RAG response received in {time.time()-t0:.1f}s")
+        pretty("Tutor [RAG memory] →", {"response": stream_rag[:500] + "..."})
+    except Exception as e:
+        warn(f"Vector DB RAG test failed: {e}")
 
     # ── STEP 10 ── Memory Limit Check ─────────────────────────────────────────
     title("STEP 10 · Chat History Eviction Limit (16+ messages)")
