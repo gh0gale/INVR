@@ -52,7 +52,7 @@ async def chat_stream(request: Request, request_data: ChatRequest, background_ta
         full_ai_response = ""
         
         try:
-            async for chunk, metadata in tutor_graph.astream(initial_state, stream_mode="messages", config={"recursion_limit": 10}):
+            async for chunk, metadata in tutor_graph.astream(initial_state, stream_mode="messages", config={"recursion_limit": 25}):
                 if metadata.get("langgraph_node") == "generate":
                     if chunk.content:
                         full_ai_response += chunk.content

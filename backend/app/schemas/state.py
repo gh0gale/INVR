@@ -23,3 +23,6 @@ class AnalysisState(TypedDict):
     # Final Output
     llm_output: Optional[Dict[str, Any]]
     errors: List[str]
+
+    retry_count: int
+    correction_note: Optional[str]
