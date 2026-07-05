@@ -1,59 +1,84 @@
 import logging
 import json
-from langchain_ollama import ChatOllama
+import numpy as np
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
-from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
 from app.schemas.tutor import TutorState
 from app.tools.market_data import fetch_stock_news
 
-# --- 1. ROUTER CLASSIFICATION (Converted to Async) ---
-class RouteDecision(BaseModel):
-    mode: Literal["definition", "portfolio", "scenario", "news"] = Field(
-        description="Classify user intent: 'definition' (jargon/terms), 'portfolio' (risk/goals/holdings), 'scenario' (what to watch/buy triggers), 'news' (recent events/updates)."
-    )
+# Initialize Ollama Embeddings using the dedicated local embedding model
+embedder = OllamaEmbeddings(model="nomic-embed-text")
 
-async def semantic_router_node(state: TutorState) -> TutorState:
-    logger.info("Classifying user intent...")
-    # Initialize LLM with zero temperature for deterministic routing
-    llm = ChatOllama(model="llama3.1", temperature=0.0)
-    structured_llm = llm.with_structured_output(RouteDecision)
+# Pre-defined category descriptions to serve as similarity centroids
+CATEGORY_DESCRIPTIONS = {
+    "definition": "Explain what a financial term, acronym, or metric means with a clear example.",
+    "portfolio": "Evaluate personal risk, investment goals, asset allocation, or capital constraints.",
+    "scenario": "Analyze what to do next, buy or sell triggers, price targets, and future market conditions.",
+    "news": "Fetch recent events, market announcements, or news headlines about a specific stock."
+}
+
+
+
+_CATEGORY_VECTORS = None
+
+async def get_category_vectors() -> Dict[str, np.ndarray]:
+    """Lazy-loads and caches centroid embeddings on first execution."""
+    global _CATEGORY_VECTORS
+    if _CATEGORY_VECTORS is None:
+        logger.info("Pre-computing category embeddings for mathematical semantic router...")
+        _CATEGORY_VECTORS = {}
+        for k, v in CATEGORY_DESCRIPTIONS.items():
+            embedding = await embedder.aembed_query(v)
+            _CATEGORY_VECTORS[k] = np.array(embedding)
+    return _CATEGORY_VECTORS
+
+def cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
+    """Computes pure cosine similarity between two dimensional vectors."""
+    return float(np.dot(vec_a, vec_b) / (np.linalg.norm(vec_a) * np.linalg.norm(vec_b)))
+
+# --- 1. MATHEMATICAL SEMANTIC ROUTER (Phase 1 Blueprint Upgrade) ---
+async def semantic_router_node(state: TutorState) -> Dict[str, Any]:
+    logger.info("Calculating semantic user intent via vector similarity...")
     
     last_msg = state["messages"][-1].content
     
-    decision = await structured_llm.ainvoke([
-        SystemMessage(content="""You are a routing supervisor. Classify the user's intent. 
-        CRITICAL ROUTING RULES:
-        - 'definition': ALWAYS use this if the user asks what a term, acronym, or metric means (e.g., 'What is CAGR?', 'Explain SMA').
-        - 'portfolio': Use if they ask about their personal risk, goals, or capital.
-        - 'scenario': Use if they ask what to do next, when to buy/sell, or future triggers.
-        - 'news': Use if they ask for recent events or updates."""),
-        HumanMessage(content=last_msg)
-    ])
+    # 1. Generate embedding vector for the inbound message asynchronously
+    query_vector = np.array(await embedder.aembed_query(last_msg))
+    centroids = await get_category_vectors()
     
-    return {"routed_mode": decision.mode}
+    # 2. Calculate distance metrics against centroids
+    scores = {cat: cosine_similarity(query_vector, centroid) for cat, centroid in centroids.items()}
+    best_match = max(scores, key=scores.get)
+    best_score = scores[best_match]
+    
+    # 3. Apply deterministic safety gate threshold (0.45)
+    # Reverts back to baseline 'scenario' if intent is ambiguous to minimize misrouting errors
+    routed_mode = best_match if best_score > 0.45 else "scenario"
+    
+    logger.info("Semantic Router resolution: '%s' (Confidence Score: %.3f)", routed_mode.upper(), best_score)
+    return {"routed_mode": routed_mode}
 
-# --- 2. TOOL EXECUTION NODE (Already Async) ---
+# --- 2. TOOL EXECUTION NODE ---
 async def news_tool_node(state: TutorState) -> TutorState:
     logger.info("Fetching live market news...")
     ticker = state["analysis_state"].get("ticker", "RELIANCE.NS")
     news_text = await fetch_stock_news(ticker)
     return {"tool_data": news_text}
 
-# --- 3. GENERATION NODE (Fully Optimized Async) ---
+# --- 3. GENERATION NODE ---
 async def generation_node(state: TutorState, config: RunnableConfig) -> TutorState:
     mode = state["routed_mode"]
     logger.info("Generating response via mode: %s", mode.upper())
     
     llm = ChatOllama(model="llama3.1", temperature=0.3) 
     
-    import json
     analysis_state_str = json.dumps(state.get('analysis_state', {}))
     if len(analysis_state_str) > 2000:
         analysis_state_str = analysis_state_str[:1997] + "..."
@@ -83,10 +108,7 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
     chat_history = state["messages"][-10:]
     messages = [SystemMessage(content=sys_instruction)] + chat_history
     
-    # 3. CRITICAL: Pass the 'config' to .ainvoke()
-    # This automatically unlocks token-by-token streaming back to your FastAPI route!
     response = await llm.ainvoke(messages, config)
-    
     return {"messages": [response]}
 
 # --- 4. CONDITIONAL EDGE ---
@@ -99,7 +121,6 @@ def route_edge(state: TutorState) -> str:
 def build_tutor_graph():
     workflow = StateGraph(TutorState)
     
-    # Add nodes natively
     workflow.add_node("router", semantic_router_node)
     workflow.add_node("news_tool", news_tool_node)
     workflow.add_node("generate", generation_node)
