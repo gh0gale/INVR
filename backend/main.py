@@ -6,8 +6,14 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi.responses import RedirectResponse
-from app.api.routes import profile,analytics,tutor
 from app.database import supabase_admin
+
+# 1. INITIALIZE TELEMETRY FIRST (Must happen before LangGraph imports)
+from app.telemetry import init_telemetry
+tracer = init_telemetry()
+
+# 2. NOW IMPORT ROUTES
+from app.api.routes import profile, analytics, tutor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,16 +50,12 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(profile.router, prefix="/api/v1/profiles", tags=["Phase 0: Ingestion"])
-
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Phase 2: Quant Engine"])
-
 app.include_router(tutor.router, prefix="/api/v1/tutor")
-
 
 @app.get("/")
 def read_root():
     return RedirectResponse(url="/docs")
-
 
 @app.get("/health")
 def health_check():

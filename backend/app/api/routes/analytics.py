@@ -6,6 +6,7 @@ from app.schemas.api import PipelineRequest, PipelineResponse
 from app.orchestrator import build_pipeline_graph
 from app.services.ledger_service import log_prediction_to_ledger
 from app.api.deps import get_current_user_id
+from app.telemetry import wrap_background_task
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +50,7 @@ async def process_pipeline(request: Request, payload: PipelineRequest, backgroun
             errors=final_state["errors"]
         )
 
-    # 5. Extract Gold Verdict — handle both Pydantic model instance and plain dict
-    # LangGraph often returns state nodes as plain dicts after serialization
+    # 5. Extract Gold Verdict
     gold_state = final_state.get("gold")
     if gold_state is None:
         gold_verdict = "UNKNOWN"
@@ -61,25 +61,26 @@ async def process_pipeline(request: Request, payload: PipelineRequest, backgroun
     else:
         gold_verdict = "UNKNOWN"
 
-    # Also extract LLM output safely
+    # Extract LLM output safely
     llm_output = final_state.get("llm_output")
     if isinstance(llm_output, dict):
-        pass  # already a dict, pass as-is
+        pass  
     elif hasattr(llm_output, "model_dump"):
         llm_output = llm_output.model_dump()
 
     # --- 4. STAGE 8: HYBRID LEDGER LOGGING (Fire & Forget) ---
     if final_state.get("silver") and final_state.get("gold"):
         
-        # Safely convert Pydantic models to dicts if they aren't already
         silver_data = final_state["silver"].model_dump() if hasattr(final_state["silver"], "model_dump") else final_state["silver"]
         gold_data = final_state["gold"].model_dump() if hasattr(final_state["gold"], "model_dump") else final_state["gold"]
         
-        # Safely grab session_id (default to a system tag if called outside of a chat context)
         session_id = getattr(payload, "session_id", "analytics-api-execution")
 
+        # Telemetry: Wrap the background task so the Trace ID survives the thread hop
+        traced_ledger_task = wrap_background_task(log_prediction_to_ledger)
+
         background_tasks.add_task(
-            log_prediction_to_ledger,
+            traced_ledger_task,
             session_id,
             silver_data,
             gold_data,
