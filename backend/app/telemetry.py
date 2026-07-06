@@ -8,9 +8,29 @@ from openinference.instrumentation.langchain import LangChainInstrumentor
 
 def init_telemetry():
     """Initializes OpenTelemetry and LangChain auto-instrumentation."""
+    import urllib.request
+    import urllib.error
+    import logging
+    logger = logging.getLogger(__name__)
+
     # Defaults to local Phoenix or Jaeger collector
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:6060/v1/traces")
     
+    # OTLP Collector Health Check
+    try:
+        # Check base URL / health endpoint if possible, or just parse hostname/port
+        from urllib.parse import urlparse
+        parsed = urlparse(endpoint)
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1.0)
+        result = sock.connect_ex((parsed.hostname, parsed.port or 80))
+        if result != 0:
+            logger.warning(f"OTLP Collector at {endpoint} is offline/unreachable. Traces will be dropped!")
+        sock.close()
+    except Exception as e:
+        logger.warning(f"Failed to verify OTLP Collector health at {endpoint}: {e}")
+
     resource = Resource(attributes={"service.name": "finai-orchestrator"})
     provider = TracerProvider(resource=resource)
     

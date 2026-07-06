@@ -47,6 +47,7 @@ def cosine_similarity(vec_a: np.ndarray, vec_b: np.ndarray) -> float:
     return float(np.dot(vec_a, vec_b) / (np.linalg.norm(vec_a) * np.linalg.norm(vec_b)))
 
 # --- 1. MATHEMATICAL SEMANTIC ROUTER (Phase 1 Blueprint Upgrade) ---
+from opentelemetry import trace
 async def semantic_router_node(state: TutorState) -> Dict[str, Any]:
     logger.info("Calculating semantic user intent via vector similarity...")
     
@@ -66,6 +67,12 @@ async def semantic_router_node(state: TutorState) -> Dict[str, Any]:
     routed_mode = best_match if best_score > 0.45 else "scenario"
     
     logger.info("Semantic Router resolution: '%s' (Confidence Score: %.3f)", routed_mode.upper(), best_score)
+    
+    span = trace.get_current_span()
+    if span and span.is_recording():
+        span.set_attribute("router.category", routed_mode)
+        span.set_attribute("router.confidence", best_score)
+        
     return {"routed_mode": routed_mode}
 
 # --- 2. TOOL EXECUTION NODE ---

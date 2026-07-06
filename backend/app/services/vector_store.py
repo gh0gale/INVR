@@ -35,6 +35,7 @@ def upsert_ledger_to_vectorstore(log_id: str, ticker: str, timeframe: str, verdi
     except Exception as e:
         logger.error(f"Failed to upsert vector to Supabase: {str(e)}")
 
+from opentelemetry import trace
 async def query_ledger_history(ticker: str, n_results: int = 2) -> str:
     """Retrieves past algorithmic predictions for a specific ticker using cosine similarity."""
     if not supabase_admin:
@@ -56,13 +57,22 @@ async def query_ledger_history(ticker: str, n_results: int = 2) -> str:
             }
         ).execute()
         
+        span = trace.get_current_span()
+        
         if not response.data:
+            if span and span.is_recording():
+                span.set_attribute("retrieval.chunk_count", 0)
+                span.set_attribute("retrieval.source_types", [])
             return "No historical ledger data found for this ticker."
             
         history_blocks = []
         for item in response.data:
             block = f"Timeframe: {item['timeframe']} | Verdict: {item['verdict']}\nReasoning: {item['reasoning_text']}"
             history_blocks.append(block)
+            
+        if span and span.is_recording():
+            span.set_attribute("retrieval.chunk_count", len(response.data))
+            span.set_attribute("retrieval.source_types", ["ledger_history"])
             
         return "\n\n---\n\n".join(history_blocks)
         

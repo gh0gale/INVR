@@ -8,6 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage
 from pydantic import ValidationError
+from opentelemetry import trace
 
 from app.schemas.state import AnalysisState
 from app.schemas.llm import AnalysisOutput
@@ -225,6 +226,12 @@ def route_validation(state: AnalysisState) -> str:
         return END
         
     current_retries = state.get("retry_count", 0)
+    
+    span = trace.get_current_span()
+    if span and span.is_recording():
+        span.set_attribute("analysis.retry_count", current_retries + 1)
+        span.set_attribute("analysis.correction_note", state.get("correction_note"))
+        
     if current_retries >= 2:
         logger.error("Max retries hit. Graph terminating with errors.")
         return END

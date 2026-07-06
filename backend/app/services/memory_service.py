@@ -1,65 +1,92 @@
 import logging
 from app.database import supabase_admin as supabase
 from app.pipeline.memory_graph import extract_memory_chunk
+# NEW: Import tracer
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
+# NEW: Get the tracer for this module
+tracer = trace.get_tracer(__name__)
 
 async def manage_session_memory(session_id: str, user_id: str, user_msg: str, ai_msg: str, topic_changed: bool = False):
     """Handles chat persistence and chunked semantic extraction."""
-    logger.info("Syncing chat state for session %s", session_id)
-    
-    # 1. Fetch current chat session
-    session_res = supabase.table("chat_sessions").select("*").eq("session_id", session_id).execute()
-    
-    if not session_res.data:
-        new_session = {
-            "session_id": session_id,
-            "user_id": user_id,
-            "working_memory": [],
-            "episodic_memory": []
-        }
-        supabase.table("chat_sessions").insert(new_session).execute()
-        session_data = new_session
-    else:
-        session_data = session_res.data[0]
-
-    # 2. Append the newest message pair
-    working_mem = session_data.get("working_memory", [])
-    working_mem.append({"role": "human", "content": user_msg})
-    working_mem.append({"role": "ai", "content": ai_msg})
-
-    # 3. CHUNKED EVICTION LOGIC
-    if len(working_mem) >= 16 or topic_changed:
-        logger.info("Memory watermark reached. Triggering Chunked Eviction...")
+    # NEW: Wrap the entire execution in a span
+    with tracer.start_as_current_span("manage_session_memory") as span:
+        # Tag the span with attributes
+        span.set_attribute("session.id", session_id)
+        span.set_attribute("user.id", user_id)
+        span.set_attribute("memory.topic_changed_flag", topic_changed)
         
-        chunk_to_summarize = working_mem[:10]
-        chunk_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in chunk_to_summarize])
-        
-        profile_res = supabase.table("user_profiles").select("semantic_profile").eq("id", user_id).execute()
-        current_semantic = profile_res.data[0].get("semantic_profile", {}) if profile_res.data else {}
-
-        # Run extraction
-        extracted_data = await extract_memory_chunk(chunk_text, current_semantic)
-        
-        # Patch User Profile
-        if extracted_data["new_learned_concepts"] or extracted_data["portfolio_updates"]:
-            current_semantic["learned_concepts"] = list(set(current_semantic.get("learned_concepts", []) + extracted_data["new_learned_concepts"]))
-            if extracted_data["portfolio_updates"]:
-                current_semantic["latest_portfolio_note"] = extracted_data["portfolio_updates"]
+        try:
+            logger.info("Syncing chat state for session %s", session_id)
             
-            supabase.table("user_profiles").update({"semantic_profile": current_semantic}).eq("id", user_id).execute()
-            logger.info("Semantic Profile Patched.")
+            # 1. Fetch current chat session
+            session_res = supabase.table("chat_sessions").select("*").eq("session_id", session_id).execute()
+            
+            if not session_res.data:
+                new_session = {
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "working_memory": [],
+                    "episodic_memory": []
+                }
+                supabase.table("chat_sessions").insert(new_session).execute()
+                session_data = new_session
+            else:
+                session_data = session_res.data[0]
 
-        # Update Session Data
-        episodic = session_data.get("episodic_memory", [])
-        episodic.append(extracted_data["episodic_summary"])
-        working_mem = working_mem[10:]
-        
-        supabase.table("chat_sessions").update({
-            "working_memory": working_mem,
-            "episodic_memory": episodic
-        }).eq("session_id", session_id).execute()
-        
-    else:
-        # Standard fast-save
-        supabase.table("chat_sessions").update({"working_memory": working_mem}).eq("session_id", session_id).execute()
+            # 2. Append the newest message pair
+            working_mem = session_data.get("working_memory", [])
+            working_mem.append({"role": "human", "content": user_msg})
+            working_mem.append({"role": "ai", "content": ai_msg})
+
+            # 3. CHUNKED EVICTION LOGIC
+            if len(working_mem) >= 16 or topic_changed:
+                logger.info("Memory watermark reached. Triggering Chunked Eviction...")
+                # Log an event in the span for visibility
+                span.add_event("triggering_chunked_eviction")
+                
+                chunk_to_summarize = working_mem[:10]
+                chunk_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in chunk_to_summarize])
+                
+                profile_res = supabase.table("user_profiles").select("semantic_profile").eq("id", user_id).execute()
+                current_semantic = profile_res.data[0].get("semantic_profile", {}) if profile_res.data else {}
+
+                # Run extraction
+                extracted_data = await extract_memory_chunk(chunk_text, current_semantic)
+                
+                # Tag span with extraction details
+                span.set_attribute("memory.extracted.new_concepts_count", len(extracted_data.get("new_learned_concepts", [])))
+                span.set_attribute("memory.extracted.portfolio_updates", bool(extracted_data.get("portfolio_updates")))
+
+                # Patch User Profile
+                if extracted_data["new_learned_concepts"] or extracted_data["portfolio_updates"]:
+                    current_semantic["learned_concepts"] = list(set(current_semantic.get("learned_concepts", []) + extracted_data["new_learned_concepts"]))
+                    if extracted_data["portfolio_updates"]:
+                        current_semantic["latest_portfolio_note"] = extracted_data["portfolio_updates"]
+                    
+                    supabase.table("user_profiles").update({"semantic_profile": current_semantic}).eq("id", user_id).execute()
+                    logger.info("Semantic Profile Patched.")
+
+                # Update Session Data
+                episodic = session_data.get("episodic_memory", [])
+                episodic.append(extracted_data["episodic_summary"])
+                working_mem = working_mem[10:]
+                
+                supabase.table("chat_sessions").update({
+                    "working_memory": working_mem,
+                    "episodic_memory": episodic
+                }).eq("session_id", session_id).execute()
+                
+            else:
+                # Standard fast-save
+                span.add_event("fast_save_working_memory")
+                supabase.table("chat_sessions").update({"working_memory": working_mem}).eq("session_id", session_id).execute()
+                
+            span.set_status(trace.Status(trace.StatusCode.OK))
+            
+        except Exception as e:
+            span.record_exception(e)
+            span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            logger.error(f"Memory Service Error: {str(e)}")
+            raise # Re-raise if necessary or handle

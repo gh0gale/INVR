@@ -1,5 +1,6 @@
 import re
 import logging
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,9 @@ def check_input_safety(user_message: str) -> tuple[bool, str]:
     for pattern in INJECTION_PATTERNS:
         if pattern.search(user_message):
             logger.warning("Guardrail Block Triggered: Matched injection pattern.")
+            span = trace.get_current_span()
+            if span and span.is_recording():
+                span.add_event("guardrail.block", {"reason": "matched injection pattern", "pattern_index": INJECTION_PATTERNS.index(pattern)})
             return False, "I cannot fulfill this request. I am restricted to providing educational financial analysis based on the quantitative engine's telemetry."
             
     return True, ""
