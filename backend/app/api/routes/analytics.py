@@ -7,6 +7,7 @@ from app.orchestrator import build_pipeline_graph
 from app.services.ledger_service import log_prediction_to_ledger
 from app.api.deps import get_current_user_id
 from app.telemetry import wrap_background_task
+from app.services.guardrail_service import check_input_safety
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,12 @@ async def process_pipeline(request: Request, payload: PipelineRequest, backgroun
     """
     Triggers the Medallion Data Pipeline and LangGraph orchestrator for a specific ticker.
     """
+    # Guardrail Check
+    payload_str = str(payload.model_dump() if hasattr(payload, 'model_dump') else payload)
+    is_safe, rejection_message = await check_input_safety(payload_str)
+    if not is_safe:
+        raise HTTPException(status_code=400, detail=rejection_message)
+
     # 1. Initialize your exact AnalysisState from the payload
     initial_state = {
         "ticker": payload.ticker.upper(),

@@ -36,14 +36,18 @@ def upsert_ledger_to_vectorstore(log_id: str, ticker: str, timeframe: str, verdi
         logger.error(f"Failed to upsert vector to Supabase: {str(e)}")
 
 from opentelemetry import trace
-async def query_ledger_history(ticker: str, n_results: int = 2) -> str:
+async def query_ledger_history(ticker: str, n_results: int = 2, routed_mode: str = None) -> str:
     """Retrieves past algorithmic predictions for a specific ticker using cosine similarity."""
     if not supabase_admin:
         return "Historical database offline."
 
     try:
         # Embed the query
-        query_text = f"Historical algorithmic analysis and predictions for {ticker}"
+        if routed_mode:
+            query_text = f"Historical algorithmic analysis and predictions for {ticker} focusing on {routed_mode}"
+        else:
+            query_text = f"Historical algorithmic analysis and predictions for {ticker}"
+            
         query_embedding = await embedder.aembed_query(query_text)
         
         # Call the Supabase RPC (Remote Procedure Call) function we created in SQL

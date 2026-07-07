@@ -26,7 +26,7 @@ async def chat_stream(request: Request, request_data: ChatRequest, background_ta
     # ==========================================
     # PHASE 1: DETERMINISTIC INBOUND GUARDRAIL
     # ==========================================
-    is_safe, rejection_message = check_input_safety(request_data.message)
+    is_safe, rejection_message = await check_input_safety(request_data.message)
     
     if not is_safe:
         logger.warning("Guardrail blocked prompt injection attempt from user %s", user_id)

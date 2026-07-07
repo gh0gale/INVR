@@ -1,5 +1,6 @@
 import logging
 import json
+import os
 import numpy as np
 from typing import Dict, Any
 from langchain_ollama import ChatOllama, OllamaEmbeddings
@@ -24,8 +25,11 @@ CATEGORY_DESCRIPTIONS = {
     "definition": "Explain what a financial term, acronym, or metric means with a clear example.",
     "portfolio": "Evaluate personal risk, investment goals, asset allocation, or capital constraints.",
     "scenario": "Analyze what to do next, buy or sell triggers, price targets, and future market conditions.",
-    "news": "Fetch recent events, market announcements, or news headlines about a specific stock."
+    "news": "Fetch recent events, market announcements, or news headlines about a specific stock.",
+    "fallback": "General financial questions or ambiguous queries that do not fit other categories."
 }
+
+ROUTER_MODE = os.getenv("ROUTER_MODE", "enforce")
 
 
 
@@ -63,8 +67,13 @@ async def semantic_router_node(state: TutorState) -> Dict[str, Any]:
     best_score = scores[best_match]
     
     # 3. Apply deterministic safety gate threshold (0.45)
-    # Reverts back to baseline 'scenario' if intent is ambiguous to minimize misrouting errors
-    routed_mode = best_match if best_score > 0.45 else "scenario"
+    routed_mode = best_match
+    if best_score <= 0.45:
+        if ROUTER_MODE == "log_only":
+            logger.info("Semantic Router: Below confidence threshold (%.3f <= 0.45), but running in log_only mode. Keeping %s.", best_score, best_match)
+        else:
+            logger.info("Semantic Router: Below confidence threshold (%.3f <= 0.45). Falling back to 'fallback'.", best_score)
+            routed_mode = "fallback"
     
     logger.info("Semantic Router resolution: '%s' (Confidence Score: %.3f)", routed_mode.upper(), best_score)
     
@@ -95,7 +104,7 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
         analysis_state_str = analysis_state_str[:1997] + "..."
 
     # --- PHASE 2: CONTEXT HYDRODYNAMICS (Vector Retrieval) ---
-    historical_context = await query_ledger_history(ticker)
+    historical_context = await query_ledger_history(ticker, routed_mode=mode)
 
     sys_instruction = f"""You are an elite quantitative financial tutor.
     User Profile: Level: {state['user_profile'].get('experience_level')}, Goal: {state['user_profile'].get('goal')}.
@@ -121,6 +130,8 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
         sys_instruction += "\nEvaluate the user's question explicitly against their existing portfolio allocations and stated goals. Reference historical trends if applicable."
     elif mode == "scenario":
         sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of the triggers and why they mathematically matter. Cross-reference past historical reasoning to highlight trend shifts."
+    elif mode == "fallback":
+        sys_instruction += "\nProvide a general educational overview. Do not give specific financial advice."
 
     chat_history = state["messages"][-10:]
     messages = [SystemMessage(content=sys_instruction)] + chat_history
