@@ -11,9 +11,11 @@ from langgraph.graph import StateGraph, START, END
 
 
 from app.services.vector_store import query_ledger_history
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+from config.gate_thresholds import GATE_THRESHOLDS
 from app.schemas.tutor import TutorState
 from app.tools.market_data import fetch_stock_news
 
@@ -66,13 +68,14 @@ async def semantic_router_node(state: TutorState) -> Dict[str, Any]:
     best_match = max(scores, key=scores.get)
     best_score = scores[best_match]
     
-    # 3. Apply deterministic safety gate threshold (0.45)
+    # 3. Apply configurable safety gate threshold
     routed_mode = best_match
-    if best_score <= 0.45:
+    threshold = settings.ROUTER_CONFIDENCE_THRESHOLD
+    if best_score <= threshold:
         if ROUTER_MODE == "log_only":
-            logger.info("Semantic Router: Below confidence threshold (%.3f <= 0.45), but running in log_only mode. Keeping %s.", best_score, best_match)
+            logger.info("Semantic Router: Below confidence threshold (%.3f <= %.3f), but running in log_only mode. Keeping %s.", best_score, threshold, best_match)
         else:
-            logger.info("Semantic Router: Below confidence threshold (%.3f <= 0.45). Falling back to 'fallback'.", best_score)
+            logger.info("Semantic Router: Below confidence threshold (%.3f <= %.3f). Falling back to 'fallback'.", best_score, threshold)
             routed_mode = "fallback"
     
     logger.info("Semantic Router resolution: '%s' (Confidence Score: %.3f)", routed_mode.upper(), best_score)
@@ -91,6 +94,35 @@ async def news_tool_node(state: TutorState) -> TutorState:
     news_text = await fetch_stock_news(ticker)
     return {"tool_data": news_text}
 
+def extract_relevant_state(analysis_state: Dict[str, Any], mode: str) -> str:
+    """Extracts only the relevant parts of the analysis state based on routed mode to save tokens."""
+    if not analysis_state:
+        return "{}"
+    
+    if mode == "definition":
+        return "{}"  # Minimal state needed for purely educational definitions
+    
+    extracted = {}
+    extracted["ticker"] = analysis_state.get("ticker", "UNKNOWN")
+    
+    if mode == "portfolio":
+        # Include risk, allocation, and current summary
+        extracted["risk_warning"] = analysis_state.get("risk_warning")
+        extracted["verdict"] = analysis_state.get("verdict")
+    elif mode == "scenario":
+        # Include triggers, technicals
+        extracted["tutor_triggers"] = analysis_state.get("tutor_triggers")
+        extracted["what_to_watch"] = analysis_state.get("what_to_watch")
+        extracted["verdict"] = analysis_state.get("verdict")
+    elif mode == "news":
+        # Minimal context for news synthesis
+        extracted["verdict"] = analysis_state.get("verdict")
+        extracted["tutor_triggers"] = analysis_state.get("tutor_triggers")
+    else: # fallback
+        extracted["verdict"] = analysis_state.get("verdict")
+        
+    return json.dumps(extracted)
+
 # --- 3. GENERATION NODE ---
 async def generation_node(state: TutorState, config: RunnableConfig) -> TutorState:
     mode = state["routed_mode"]
@@ -99,12 +131,13 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
     
     llm = ChatOllama(model="llama3.1", temperature=0.3) 
     
-    analysis_state_str = json.dumps(state.get('analysis_state', {}))
-    if len(analysis_state_str) > 2000:
-        analysis_state_str = analysis_state_str[:1997] + "..."
+    analysis_state_str = extract_relevant_state(state.get('analysis_state', {}), mode)
 
     # --- PHASE 2: CONTEXT HYDRODYNAMICS (Vector Retrieval) ---
-    historical_context = await query_ledger_history(ticker, routed_mode=mode)
+    if mode == "definition":
+        historical_context = "No historical context needed for definitions."
+    else:
+        historical_context = await query_ledger_history(ticker, routed_mode=mode)
 
     sys_instruction = f"""You are an elite quantitative financial tutor.
     User Profile: Level: {state['user_profile'].get('experience_level')}, Goal: {state['user_profile'].get('goal')}.
@@ -130,6 +163,7 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
         sys_instruction += "\nEvaluate the user's question explicitly against their existing portfolio allocations and stated goals. Reference historical trends if applicable."
     elif mode == "scenario":
         sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of the triggers and why they mathematically matter. Cross-reference past historical reasoning to highlight trend shifts."
+        sys_instruction += f"\n\n--- STATIC GATE THRESHOLDS ---\n{json.dumps(GATE_THRESHOLDS, indent=2)}\nUse these static thresholds to explain why certain triggers are mathematically relevant."
     elif mode == "fallback":
         sys_instruction += "\nProvide a general educational overview. Do not give specific financial advice."
 

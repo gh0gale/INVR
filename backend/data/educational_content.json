@@ -1,0 +1,18 @@
+[
+  {
+    "topic": "circuit_breaker",
+    "content": "A circuit breaker is a regulatory mechanism that temporarily halts trading on an exchange to curb panic-selling or manic-buying. For example, if a stock hits the 20% lower circuit, trading is halted to allow investors to digest information."
+  },
+  {
+    "topic": "rsi",
+    "content": "Relative Strength Index (RSI) is a momentum oscillator that measures the speed and change of price movements. An RSI above 70 indicates an overbought condition, while an RSI below 30 indicates an oversold condition."
+  },
+  {
+    "topic": "macd",
+    "content": "Moving Average Convergence Divergence (MACD) is a trend-following momentum indicator. When the MACD line crosses above the signal line, it suggests bullish momentum. A crossover below indicates bearish momentum."
+  },
+  {
+    "topic": "pe_ratio",
+    "content": "The Price-to-Earnings (P/E) ratio measures a company's current share price relative to its per-share earnings. A high P/E could mean the stock is overvalued or that investors expect high growth rates."
+  }
+]

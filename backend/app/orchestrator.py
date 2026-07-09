@@ -12,6 +12,7 @@ from opentelemetry import trace
 
 from app.schemas.state import AnalysisState
 from app.schemas.llm import AnalysisOutput
+from app.services.vector_store import query_ledger_history
 
 from app.services.bronze_service import build_bronze_payload
 from app.services.silver_service import compute_silver_metrics
@@ -113,6 +114,9 @@ async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
         if state.get("correction_note"):
             correction_instruction = f"\nCRITICAL CORRECTION REQUIRED FROM PREVIOUS ATTEMPT:\n{state['correction_note']}\nFix this specific schema error."
 
+        # RAG context for Analytics Pipeline (Phase 2 requirement)
+        historical_context = await query_ledger_history(state['ticker'], routed_mode="scenario")
+
         sys_prompt = f"""You are an elite quantitative financial synthesizer. You translate mathematical verdicts into deep, institutional-grade tear sheets.
 
 CRITICAL INSTRUCTIONS:
@@ -145,10 +149,13 @@ USER RISK: {user.get('risk_tolerance', 'moderate')}
 
 VERDICT: {_safe_get(gold, 'verdict', 'MONITOR')}
 PRIMARY REASON: {_safe_get(gold, 'primary_reason', '')}
-GATE RESULTS: {str(_safe_get(gold, 'gate_results', {}))}
+GATE RESULTS: {str(_safe_get(gold, 'gate_results', {{}}))}
 ACTIONABLE CONDITIONS: {safe_watch}
 
 SILVER METRICS: {safe_silver}
+
+--- HISTORICAL ALGORITHMIC CONTEXT ---
+{historical_context}
 """
 
         response = await llm.ainvoke([SystemMessage(content=sys_prompt)])

@@ -21,8 +21,10 @@ async def process_pipeline(request: Request, payload: PipelineRequest, backgroun
     """
     Triggers the Medallion Data Pipeline and LangGraph orchestrator for a specific ticker.
     """
-    # Guardrail Check
-    payload_str = str(payload.model_dump() if hasattr(payload, 'model_dump') else payload)
+    # Guardrail Check - precise textual field checking to avoid false positives on numeric fields
+    profile = payload.user_profile
+    profile_text = f"Risk: {profile.risk_tolerance} | Exp: {profile.experience_level} | Goal: {profile.goal}" if profile else ""
+    payload_str = f"Ticker: {payload.ticker} | Timeframe: {payload.timeframe} | Profile: {profile_text}"
     is_safe, rejection_message = await check_input_safety(payload_str)
     if not is_safe:
         raise HTTPException(status_code=400, detail=rejection_message)
