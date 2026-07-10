@@ -10,7 +10,6 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, START, END
 
 
-from app.services.vector_store import query_ledger_history
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -133,11 +132,6 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
     
     analysis_state_str = extract_relevant_state(state.get('analysis_state', {}), mode)
 
-    # --- PHASE 2: CONTEXT HYDRODYNAMICS (Vector Retrieval) ---
-    if mode == "definition":
-        historical_context = "No historical context needed for definitions."
-    else:
-        historical_context = await query_ledger_history(ticker, routed_mode=mode)
 
     sys_instruction = f"""You are an elite quantitative financial tutor.
     User Profile: Level: {state['user_profile'].get('experience_level')}, Goal: {state['user_profile'].get('goal')}.
@@ -149,9 +143,6 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
     
     --- CURRENT ANALYSIS STATE ---
     {analysis_state_str}
-    
-    --- HISTORICAL ALGORITHMIC CONTEXT ---
-    {historical_context}
     """
     
     if mode == "news" and state.get("tool_data"):

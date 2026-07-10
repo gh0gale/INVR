@@ -2,7 +2,6 @@ from datetime import datetime
 import logging
 from opentelemetry import trace
 from app.database import supabase_admin as supabase
-from app.services.vector_store import upsert_ledger_to_vectorstore
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -62,32 +61,7 @@ async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdic
                 logger.info("New algorithmic prediction written.")
                 span.add_event("New ledger entry written.")
                 
-                # 2. Vector Database Upsert (Memory Creation)
-                # 2. Vector Database Upsert (Memory Creation)
-                reasoning_to_embed = []
-                
-                # Try to use the deep LLM reasoning first
-                if llm_output and "personalized_reasoning" in llm_output:
-                    reasoning_to_embed = llm_output["personalized_reasoning"]
-                # Fallback to the deterministic Gold math if the LLM output isn't ready yet
-                elif verdict_draft and "primary_reason" in verdict_draft:
-                    reasoning_to_embed = [verdict_draft["primary_reason"]]
-                    
-                    # Add actionable triggers to the memory
-                    if "what_to_watch" in verdict_draft:
-                        reasoning_to_embed.extend([str(w) for w in verdict_draft["what_to_watch"]])
 
-                if reasoning_to_embed:
-                    logger.info(f"Triggering Vector DB Upsert for {ticker}...")
-                    upsert_ledger_to_vectorstore(
-                        log_id=log_id,
-                        ticker=ticker,
-                        timeframe=timeframe,
-                        verdict=verdict_draft.get("verdict", "UNKNOWN"),
-                        reasoning_list=reasoning_to_embed
-                    )
-                else:
-                    logger.warning(f"Could not find any reasoning data to embed for {ticker}!")
 
             # 2. THE INTERACTION TRACE
             interaction_entry = {

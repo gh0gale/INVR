@@ -314,20 +314,6 @@ def run():
         else:
             warn(f"Unexpected HTTP error during injection test: {e.code}")
 
-    # ── STEP 9c ── Tutor: Vector DB Memory Check (Phase 2) ────────────────────
-    title("STEP 9c · Tutor Chat · 'Past trends?' → 'scenario' (RAG Context)")
-    tutor_payload_rag = {
-        **tutor_payload_def, 
-        "message": "Based on your historical algorithmic context, how has TCS been evaluated in the past? Have the verdicts changed?"
-    }
-    t0 = time.time()
-    try:
-        stream_rag = _stream("/api/v1/tutor/chat/stream", tutor_payload_rag)
-        ok(f"Vector RAG response received in {time.time()-t0:.1f}s")
-        pretty("Tutor [RAG memory] →", {"response": stream_rag[:500] + "..."})
-    except Exception as e:
-        warn(f"Vector DB RAG test failed: {e}")
-
     # ── STEP 10 ── Memory Limit Check ─────────────────────────────────────────
     title("STEP 10 · Chat History Eviction Limit (16+ messages)")
     try:
