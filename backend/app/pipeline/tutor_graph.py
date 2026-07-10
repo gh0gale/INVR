@@ -11,8 +11,10 @@ from langgraph.graph import StateGraph, START, END
 
 
 from app.config import settings
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 from config.gate_thresholds import GATE_THRESHOLDS
 from app.schemas.tutor import TutorState
@@ -88,10 +90,11 @@ async def semantic_router_node(state: TutorState) -> Dict[str, Any]:
 
 # --- 2. TOOL EXECUTION NODE ---
 async def news_tool_node(state: TutorState) -> TutorState:
-    logger.info("Fetching live market news...")
-    ticker = state["analysis_state"].get("ticker", "RELIANCE.NS")
-    news_text = await fetch_stock_news(ticker)
-    return {"tool_data": news_text}
+    with tracer.start_as_current_span("news_tool_node"):
+        logger.info("Fetching live market news...")
+        ticker = state["analysis_state"].get("ticker", "RELIANCE.NS")
+        news_text = await fetch_stock_news(ticker)
+        return {"tool_data": news_text}
 
 def extract_relevant_state(analysis_state: Dict[str, Any], mode: str) -> str:
     """Extracts only the relevant parts of the analysis state based on routed mode to save tokens."""
@@ -124,45 +127,46 @@ def extract_relevant_state(analysis_state: Dict[str, Any], mode: str) -> str:
 
 # --- 3. GENERATION NODE ---
 async def generation_node(state: TutorState, config: RunnableConfig) -> TutorState:
-    mode = state["routed_mode"]
-    ticker = state["analysis_state"].get("ticker", "UNKNOWN")
-    logger.info("Generating response via mode: %s", mode.upper())
-    
-    llm = ChatOllama(model="llama3.1", temperature=0.3) 
-    
-    analysis_state_str = extract_relevant_state(state.get('analysis_state', {}), mode)
+    with tracer.start_as_current_span("generation_node"):
+        mode = state["routed_mode"]
+        ticker = state["analysis_state"].get("ticker", "UNKNOWN")
+        logger.info("Generating response via mode: %s", mode.upper())
+        
+        llm = ChatOllama(model="llama3.1", temperature=0.3) 
+        
+        analysis_state_str = extract_relevant_state(state.get('analysis_state', {}), mode)
 
 
-    sys_instruction = f"""You are an elite quantitative financial tutor.
-    User Profile: Level: {state['user_profile'].get('experience_level')}, Goal: {state['user_profile'].get('goal')}.
-    
-    CRITICAL DIRECTIVES:
-    1. QUOTE-FIRST: When discussing the specific stock, anchor your answer using exact numbers from the Analysis State. 
-    2. ANALOGY-MAPPING: Tailor analogies to the user's experience level.
-    3. GRACEFUL FALLBACK: If the user asks to define a financial term, ALWAYS define it using a clear example.
-    
-    --- CURRENT ANALYSIS STATE ---
-    {analysis_state_str}
-    """
-    
-    if mode == "news" and state.get("tool_data"):
-        sys_instruction += f"\n\n--- LATEST NEWS ---\n{state['tool_data']}"
-        sys_instruction += "\nSynthesize the recent news with the current analysis state."
-    elif mode == "definition":
-        sys_instruction += "\nProvide a clear explanation of the requested term. Instead of repeating the overall stock verdict, use a brief, clear numeric example to show how the math works."
-    elif mode == "portfolio":
-        sys_instruction += "\nEvaluate the user's question explicitly against their existing portfolio allocations and stated goals. Reference historical trends if applicable."
-    elif mode == "scenario":
-        sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of the triggers and why they mathematically matter. Cross-reference past historical reasoning to highlight trend shifts."
-        sys_instruction += f"\n\n--- STATIC GATE THRESHOLDS ---\n{json.dumps(GATE_THRESHOLDS, indent=2)}\nUse these static thresholds to explain why certain triggers are mathematically relevant."
-    elif mode == "fallback":
-        sys_instruction += "\nProvide a general educational overview. Do not give specific financial advice."
+        sys_instruction = f"""You are an elite quantitative financial tutor.
+        User Profile: Level: {{state['user_profile'].get('experience_level')}}, Goal: {{state['user_profile'].get('goal')}}.
+        
+        CRITICAL DIRECTIVES:
+        1. QUOTE-FIRST: When discussing the specific stock, anchor your answer using exact numbers from the Analysis State. 
+        2. ANALOGY-MAPPING: Tailor analogies to the user's experience level.
+        3. GRACEFUL FALLBACK: If the user asks to define a financial term, ALWAYS define it using a clear example.
+        
+        --- CURRENT ANALYSIS STATE ---
+        {{analysis_state_str}}
+        """
+        
+        if mode == "news" and state.get("tool_data"):
+            sys_instruction += f"\n\n--- LATEST NEWS ---\n{{state['tool_data']}}"
+            sys_instruction += "\nSynthesize the recent news with the current analysis state."
+        elif mode == "definition":
+            sys_instruction += "\nProvide a clear explanation of the requested term. Instead of repeating the overall stock verdict, use a brief, clear numeric example to show how the math works."
+        elif mode == "portfolio":
+            sys_instruction += "\nEvaluate the user's question explicitly against their existing portfolio allocations and stated goals. Reference historical trends if applicable."
+        elif mode == "scenario":
+            sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of the triggers and why they mathematically matter. Cross-reference past historical reasoning to highlight trend shifts."
+            sys_instruction += f"\n\n--- STATIC GATE THRESHOLDS ---\n{{json.dumps(GATE_THRESHOLDS, indent=2)}}\nUse these static thresholds to explain why certain triggers are mathematically relevant."
+        elif mode == "fallback":
+            sys_instruction += "\nProvide a general educational overview. Do not give specific financial advice."
 
-    chat_history = state["messages"][-10:]
-    messages = [SystemMessage(content=sys_instruction)] + chat_history
-    
-    response = await llm.ainvoke(messages, config)
-    return {"messages": [response]}
+        chat_history = state["messages"][-10:]
+        messages = [SystemMessage(content=sys_instruction)] + chat_history
+        
+        response = await llm.ainvoke(messages, config)
+        return {"messages": [response]}
 
 # --- 4. CONDITIONAL EDGE ---
 def route_edge(state: TutorState) -> str:

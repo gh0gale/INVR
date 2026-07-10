@@ -18,18 +18,20 @@ from app.services.silver_service import compute_silver_metrics
 from app.services.gold_service import evaluate_hard_gates
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 # ==========================================
 # NODE 1: Data Fetching (Bronze)
 # ==========================================
 async def fetch_data_node(state: AnalysisState) -> AnalysisState:
-    logger.info("Fetching internet data for %s", state['ticker'])
-    try:
-        bronze = await build_bronze_payload(state['ticker'], state['timeframe'])
-        return {"bronze": bronze}
-    except Exception as e:
-        logger.error("Bronze Fetch Error for %s: %s", state.get('ticker'), str(e), exc_info=True)
-        return {"errors": [f"Bronze Fetch Error: {str(e)}"]}
+    with tracer.start_as_current_span("fetch_data_node", attributes={"ticker": state.get('ticker', 'UNKNOWN'), "timeframe": state.get('timeframe', 'UNKNOWN')}):
+        logger.info("Fetching internet data for %s", state['ticker'])
+        try:
+            bronze = await build_bronze_payload(state['ticker'], state['timeframe'])
+            return {"bronze": bronze}
+        except Exception as e:
+            logger.error("Bronze Fetch Error for %s: %s", state.get('ticker'), str(e), exc_info=True)
+            return {"errors": [f"Bronze Fetch Error: {str(e)}"]}
 
 # ==========================================
 # NODE 2: Quantitative Engine (Silver & Gold)
@@ -38,29 +40,33 @@ import asyncio
 async def quant_engine_node(state: AnalysisState) -> AnalysisState:
     if state.get("errors"): return state # Skip if previous node failed
     
-    logger.info("Executing Quant Math & Hard Gates...")
-    try:
-        bronze = state['bronze']
-        # LangGraph may deserialize Pydantic models to plain dicts; handle both cases
-        if isinstance(bronze, dict):
-            circuit_status = bronze.get('circuit_status', 'none')
-        else:
-            circuit_status = bronze.circuit_status
-        
-        available_capital = state['user_profile'].get('available_capital', 100000.0)
-        
-        # P7-01: Offload synchronous Pandas math to background thread
-        silver = await asyncio.to_thread(compute_silver_metrics, bronze)
-        gold = await asyncio.to_thread(
-            evaluate_hard_gates,
-            silver, 
-            circuit_status,
-            available_capital
-        )
-        return {"silver": silver, "gold": gold}
-    except Exception as e:
-        logger.error("Quant Engine Error for %s: %s", state.get('ticker'), str(e), exc_info=True)
-        return {"errors": [f"Quant Engine Error: {str(e)}"]}
+    with tracer.start_as_current_span("quant_engine_node") as span:
+        logger.info("Executing Quant Math & Hard Gates...")
+        try:
+            bronze = state['bronze']
+            # LangGraph may deserialize Pydantic models to plain dicts; handle both cases
+            if isinstance(bronze, dict):
+                circuit_status = bronze.get('circuit_status', 'none')
+            else:
+                circuit_status = bronze.circuit_status
+            
+            span.set_attribute("circuit_status", circuit_status)
+            
+            available_capital = state['user_profile'].get('available_capital', 100000.0)
+            
+            # P7-01: Offload synchronous Pandas math to background thread
+            silver = await asyncio.to_thread(compute_silver_metrics, bronze)
+            gold = await asyncio.to_thread(
+                evaluate_hard_gates,
+                silver, 
+                circuit_status,
+                available_capital
+            )
+            return {"silver": silver, "gold": gold}
+        except Exception as e:
+            span.record_exception(e)
+            logger.error("Quant Engine Error for %s: %s", state.get('ticker'), str(e), exc_info=True)
+            return {"errors": [f"Quant Engine Error: {str(e)}"]}
 
 # ==========================================
 # HELPERS: CoT & Safe Access
@@ -95,32 +101,35 @@ def _safe_get(obj, attr, default=None):
 async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
     if state.get("errors"): return {}
     
-    logger.info("Passing Gold payload to LOCAL Llama-3.1 Synthesizer...")
-    gold = state['gold']
-    user = state['user_profile']
-    silver = state['silver']
-    
-    try:
-        # Standard inference without structural wrapper to allow CoT reasoning
-        llm = ChatOllama(model="llama3.1", temperature=0.0)
+    with tracer.start_as_current_span("llm_synthesizer_node") as span:
+        logger.info("Passing Gold payload to LOCAL Llama-3.1 Synthesizer...")
+        gold = state['gold']
+        user = state['user_profile']
+        silver = state['silver']
         
-        # Sanitize untrusted input to prevent prompt injection
-        safe_silver = (silver.model_dump_json(exclude_none=True) if hasattr(silver, 'model_dump_json') else str(silver)).replace("<", "&lt;").replace(">", "&gt;")
-        safe_watch = str(_safe_get(gold, 'what_to_watch', [])).replace("<", "&lt;").replace(">", "&gt;")
-        
-        # Phase 3: Inject dynamic correction notes if looping
-        correction_instruction = ""
-        if state.get("correction_note"):
-            correction_instruction = f"\nCRITICAL CORRECTION REQUIRED FROM PREVIOUS ATTEMPT:\n{state['correction_note']}\nFix this specific schema error."
+        try:
+            # Standard inference without structural wrapper to allow CoT reasoning
+            llm = ChatOllama(model="llama3.1", temperature=0.0)
+            
+            # Sanitize untrusted input to prevent prompt injection
+            safe_silver = (silver.model_dump_json(exclude_none=True) if hasattr(silver, 'model_dump_json') else str(silver)).replace("<", "&lt;").replace(">", "&gt;")
+            safe_watch = str(_safe_get(gold, 'what_to_watch', [])).replace("<", "&lt;").replace(">", "&gt;")
+            
+            span.set_attribute("sanitized_input", f"Silver: {safe_silver}\nWatch: {safe_watch}")
+            
+            # Phase 3: Inject dynamic correction notes if looping
+            correction_instruction = ""
+            if state.get("correction_note"):
+                correction_instruction = f"\nCRITICAL CORRECTION REQUIRED FROM PREVIOUS ATTEMPT:\n{state['correction_note']}\nFix this specific schema error."
 
-        sys_prompt = f"""You are an elite quantitative financial synthesizer. You translate mathematical verdicts into deep, institutional-grade tear sheets.
+            sys_prompt = f"""You are an elite quantitative financial synthesizer. You translate mathematical verdicts into deep, institutional-grade tear sheets.
 
 CRITICAL INSTRUCTIONS:
 1. Before producing the final JSON, think through your reasoning inside <thinking>...</thinking> tags.
 2. Do NOT include any analysis inside the JSON keys themselves. The JSON must exactly match the schema.
 3. Output strictly valid JSON immediately after your thinking block.
 4. EVERY claim MUST be backed by exact numbers from the metrics.
-5. 'tutor_triggers' MUST be an array of 2-4 single financial jargon words ONLY.{correction_instruction}
+5. 'tutor_triggers' MUST be an array of 2-4 single financial jargon words ONLY.{{correction_instruction}}
 
 REQUIRED JSON SCHEMA:
 {{
@@ -138,49 +147,52 @@ REQUIRED JSON SCHEMA:
 }}
 
 --- QUANTITATIVE DATA ---
-TICKER: {state['ticker']}
-TIMEFRAME: {state['timeframe']}
-USER GOAL: {user.get('goal', 'growth')}
-USER RISK: {user.get('risk_tolerance', 'moderate')}
+TICKER: {{state['ticker']}}
+TIMEFRAME: {{state['timeframe']}}
+USER GOAL: {{user.get('goal', 'growth')}}
+USER RISK: {{user.get('risk_tolerance', 'moderate')}}
 
-VERDICT: {_safe_get(gold, 'verdict', 'MONITOR')}
-PRIMARY REASON: {_safe_get(gold, 'primary_reason', '')}
-GATE RESULTS: {str(_safe_get(gold, 'gate_results', {{}}))}
-ACTIONABLE CONDITIONS: {safe_watch}
+VERDICT: {{_safe_get(gold, 'verdict', 'MONITOR')}}
+PRIMARY REASON: {{_safe_get(gold, 'primary_reason', '')}}
+GATE RESULTS: {{str(_safe_get(gold, 'gate_results', {{}}))}}
+ACTIONABLE CONDITIONS: {{safe_watch}}
 
-SILVER METRICS: {safe_silver}
+SILVER METRICS: {{safe_silver}}
 
 """
 
-        response = await llm.ainvoke([SystemMessage(content=sys_prompt)])
-        
-        thinking, clean_json_str = strip_thinking_block(response.content)
-        if thinking:
-            logger.info(f"LLM CoT Execution Completed. (Thinking length: {len(thinking)} chars)")
+            response = await llm.ainvoke([SystemMessage(content=sys_prompt)])
             
-        # Return the raw string to the validation node
-        return {"llm_output": {"raw_json_string": clean_json_str}}
-        
-    except Exception as e:
-        logger.warning("LLM Offline/Failed. Falling back to deterministic verdict. Error: %s", str(e))
-        gold_verdict = _safe_get(gold, 'verdict', 'MONITOR')
-        gold_confidence = _safe_get(gold, 'confidence_score', 50.0)
-        gold_reason = _safe_get(gold, 'primary_reason', 'Deterministic analysis completed.')
-        gold_watch = _safe_get(gold, 'what_to_watch', [])
-        
-        fallback_dict = {
-            "verdict": gold_verdict,
-            "confidence_score": gold_confidence,
-            "personalized_reasoning": [
-                "SYSTEM NOTICE: AI Synthesizer is currently offline.",
-                f"DETERMINISTIC VERDICT: {gold_verdict}",
-                f"PRIMARY REASON: {gold_reason}"
-            ],
-            "what_to_watch": gold_watch,
-            "tutor_triggers": ["LLM_OFFLINE", "FALLBACK"],
-            "regulatory_disclaimer": "This analysis is generated by an AI for educational purposes only. It does not constitute financial advice. Please consult a SEBI-registered investment advisor."
-        }
-        return {"llm_output": fallback_dict, "correction_note": None}
+            thinking, clean_json_str = strip_thinking_block(response.content)
+            if thinking:
+                logger.info(f"LLM CoT Execution Completed. (Thinking length: {{len(thinking)}} chars)")
+                
+            span.set_attribute("sanitized_output", clean_json_str)
+            
+            # Return the raw string to the validation node
+            return {"llm_output": {"raw_json_string": clean_json_str}}
+            
+        except Exception as e:
+            span.record_exception(e)
+            logger.warning("LLM Offline/Failed. Falling back to deterministic verdict. Error: %s", str(e))
+            gold_verdict = _safe_get(gold, 'verdict', 'MONITOR')
+            gold_confidence = _safe_get(gold, 'confidence_score', 50.0)
+            gold_reason = _safe_get(gold, 'primary_reason', 'Deterministic analysis completed.')
+            gold_watch = _safe_get(gold, 'what_to_watch', [])
+            
+            fallback_dict = {
+                "verdict": gold_verdict,
+                "confidence_score": gold_confidence,
+                "personalized_reasoning": [
+                    "SYSTEM NOTICE: AI Synthesizer is currently offline.",
+                    f"DETERMINISTIC VERDICT: {gold_verdict}",
+                    f"PRIMARY REASON: {gold_reason}"
+                ],
+                "what_to_watch": gold_watch,
+                "tutor_triggers": ["LLM_OFFLINE", "FALLBACK"],
+                "regulatory_disclaimer": "This analysis is generated by an AI for educational purposes only. It does not constitute financial advice. Please consult a SEBI-registered investment advisor."
+            }
+            return {"llm_output": fallback_dict, "correction_note": None}
 
 # ==========================================
 # NODE 4: Schema Validation (Phase 3)

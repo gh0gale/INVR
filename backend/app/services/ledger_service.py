@@ -47,13 +47,17 @@ async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdic
                 span.add_event("Duplicate found. Bypassing insert.")
             
             else:
+                span_context = trace.get_current_span().get_span_context()
+                trace_id = format(span_context.trace_id, '032x') if span_context.is_valid else None
+
                 new_ledger_entry = {
                     "ticker": ticker,
                     "timeframe": timeframe,
                     "date": today_date,
                     "pipeline_version": PIPELINE_VERSION,
                     "silver_state": silver_metrics,
-                    "gold_verdict": verdict_draft
+                    "gold_verdict": verdict_draft,
+                    "trace_id": trace_id
                 }
                 # 1. Standard Relational Insert
                 insert_res = supabase.table("algorithmic_ledger").insert(new_ledger_entry).execute()
