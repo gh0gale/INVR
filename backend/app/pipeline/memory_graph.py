@@ -24,7 +24,7 @@ class MemoryUpdate(BaseModel):
 
 # --- 2. THE EXTRACTION NODE ---
 async def extract_memory_chunk(chat_chunk: str, current_semantic_profile: Dict[str, Any]) -> Dict[str, Any]:
-    with tracer.start_as_current_span("extract_memory_chunk"):
+    with tracer.start_as_current_span("extract_memory_chunk") as span:
         logger.info("Running background extraction (Unified Pass)...")
         
         # We use a lower temp (0.0) for strict data extraction
@@ -54,5 +54,7 @@ async def extract_memory_chunk(chat_chunk: str, current_semantic_profile: Dict[s
             "chat_chunk": chat_chunk
         })
         
+        span.set_attribute("memory.concepts_learned_count", len(result.new_learned_concepts))
+        span.set_attribute("memory.has_portfolio_updates", bool(result.portfolio_updates))
+        
         return result.model_dump()
-    

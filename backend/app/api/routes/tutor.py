@@ -6,8 +6,10 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 import logging
 
-logger = logging.getLogger(__name__)
+from opentelemetry import trace
 
+logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 from app.schemas.tutor import ChatRequest
 from app.pipeline.tutor_graph import build_tutor_graph
 from app.services.memory_service import manage_session_memory
@@ -49,31 +51,36 @@ async def chat_stream(request: Request, request_data: ChatRequest, background_ta
     }
 
     async def event_generator():
-        full_ai_response = ""
-        
-        try:
-            async for chunk, metadata in tutor_graph.astream(initial_state, stream_mode="messages", config={"recursion_limit": 25}):
-                if metadata.get("langgraph_node") == "generate":
-                    if chunk.content:
-                        full_ai_response += chunk.content
-                        yield f"data: {json.dumps({'token': chunk.content})}\n\n"
-                        
-            yield "data: [DONE]\n\n"
+        with tracer.start_as_current_span("api_chat_stream") as span:
+            span.set_attribute("user_id", user_id)
             
-            # Telemetry: Wrap memory service background execution context
-            traced_memory_task = wrap_background_task(manage_session_memory)
+            full_ai_response = ""
             
-            background_tasks.add_task(
-                traced_memory_task, 
-                request_data.session_id, 
-                user_id,
-                request_data.message, 
-                full_ai_response,
-                False 
-            )
-            
-        except Exception as e:
-            logger.error("Streaming Error: %s", str(e))
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            try:
+                async for chunk, metadata in tutor_graph.astream(initial_state, stream_mode="messages", config={"recursion_limit": 25}):
+                    if metadata.get("langgraph_node") == "generate":
+                        if chunk.content:
+                            full_ai_response += chunk.content
+                            yield f"data: {json.dumps({'token': chunk.content})}\n\n"
+                            
+                yield "data: [DONE]\n\n"
+                
+                # Telemetry: Wrap memory service background execution context
+                traced_memory_task = wrap_background_task(manage_session_memory)
+                
+                background_tasks.add_task(
+                    traced_memory_task, 
+                    request_data.session_id, 
+                    user_id,
+                    request_data.message, 
+                    full_ai_response,
+                    False 
+                )
+                
+            except Exception as e:
+                span.record_exception(e)
+                span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+                logger.error("Streaming Error: %s", str(e))
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

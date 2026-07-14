@@ -60,33 +60,32 @@ async def semantic_router_node(state: TutorState) -> Dict[str, Any]:
     
     last_msg = state["messages"][-1].content
     
-    # 1. Generate embedding vector for the inbound message asynchronously
-    query_vector = np.array(await embedder.aembed_query(last_msg))
-    centroids = await get_category_vectors()
-    
-    # 2. Calculate distance metrics against centroids
-    scores = {cat: cosine_similarity(query_vector, centroid) for cat, centroid in centroids.items()}
-    best_match = max(scores, key=scores.get)
-    best_score = scores[best_match]
-    
-    # 3. Apply configurable safety gate threshold
-    routed_mode = best_match
-    threshold = settings.ROUTER_CONFIDENCE_THRESHOLD
-    if best_score <= threshold:
-        if ROUTER_MODE == "log_only":
-            logger.info("Semantic Router: Below confidence threshold (%.3f <= %.3f), but running in log_only mode. Keeping %s.", best_score, threshold, best_match)
-        else:
-            logger.info("Semantic Router: Below confidence threshold (%.3f <= %.3f). Falling back to 'fallback'.", best_score, threshold)
-            routed_mode = "fallback"
-    
-    logger.info("Semantic Router resolution: '%s' (Confidence Score: %.3f)", routed_mode.upper(), best_score)
-    
-    span = trace.get_current_span()
-    if span and span.is_recording():
+    with tracer.start_as_current_span("semantic_router_node") as span:
+        # 1. Generate embedding vector for the inbound message asynchronously
+        query_vector = np.array(await embedder.aembed_query(last_msg))
+        centroids = await get_category_vectors()
+        
+        # 2. Calculate distance metrics against centroids
+        scores = {cat: cosine_similarity(query_vector, centroid) for cat, centroid in centroids.items()}
+        best_match = max(scores, key=scores.get)
+        best_score = scores[best_match]
+        
+        # 3. Apply configurable safety gate threshold
+        routed_mode = best_match
+        threshold = settings.ROUTER_CONFIDENCE_THRESHOLD
+        if best_score <= threshold:
+            if ROUTER_MODE == "log_only":
+                logger.info("Semantic Router: Below confidence threshold (%.3f <= %.3f), but running in log_only mode. Keeping %s.", best_score, threshold, best_match)
+            else:
+                logger.info("Semantic Router: Below confidence threshold (%.3f <= %.3f). Falling back to 'fallback'.", best_score, threshold)
+                routed_mode = "fallback"
+        
+        logger.info("Semantic Router resolution: '%s' (Confidence Score: %.3f)", routed_mode.upper(), best_score)
+        
         span.set_attribute("router.category", routed_mode)
         span.set_attribute("router.confidence", best_score)
-        
-    return {"routed_mode": routed_mode}
+            
+        return {"routed_mode": routed_mode}
 
 # --- 2. TOOL EXECUTION NODE ---
 async def news_tool_node(state: TutorState) -> TutorState:
