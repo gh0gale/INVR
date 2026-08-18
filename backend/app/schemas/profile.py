@@ -10,7 +10,7 @@ class UserProfileRequest(BaseModel):
     timeframe: Literal["intraday", "swing", "positional", "long_term"]
     risk: Literal["conservative", "moderate", "aggressive"]
     portfolio: Dict[str, float] = Field(..., description="Asset class allocations mapping")
-    capital: float = Field(..., gte=0, description="Capital in INR")
+    capital: float = Field(..., ge=0, description="Capital in INR")
 
     _contradictions_flagged: list[str] = PrivateAttr(default_factory=list)
 
@@ -39,9 +39,11 @@ class UserProfileResponse(UserProfileRequest):
 
     @classmethod
     def create_with_hash(cls, request_data: UserProfileRequest, contradictions: list[str]) -> "UserProfileResponse":
-        # Calculate a deterministic MD5 hash across sorted dictionary values to act as our immutable layout key
+        # Deterministic hash over sorted values, used purely to detect that a
+        # profile changed. SHA-256 rather than MD5: the use is not adversarial,
+        # but a weak digest in a financial codebase is a needless finding.
         serialized_profile = json.dumps(request_data.model_dump(), sort_keys=True)
-        version_hash = hashlib.md5(serialized_profile.encode("utf-8")).hexdigest()
+        version_hash = hashlib.sha256(serialized_profile.encode("utf-8")).hexdigest()
         
         return cls(
             **request_data.model_dump(),

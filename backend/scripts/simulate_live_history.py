@@ -13,7 +13,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.schemas.bronze import BronzePayload
 from app.services.silver_service import compute_silver_metrics 
 from app.services.gold_service import evaluate_hard_gates
+from app.services.ledger_service import PIPELINE_VERSION
 from config.gate_thresholds import GATE_THRESHOLDS as TH
+from scripts._grading import resolve_outcome
 
 load_dotenv(override=True)
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
@@ -59,7 +61,9 @@ def run_simulation():
                 continue
                 
             # Only proceed if the trade survives your production gates
-            if gold.verdict in ["STRONG BUY", "BUY ON DIP"]:
+            # MONITOR is gradeable since the shared rule defined it, so it is
+            # recorded too rather than being dropped from the sample.
+            if gold.verdict in ["STRONG BUY", "BUY ON DIP", "MONITOR"]:
                 
                 # 4. The Oracle: What happened in reality 15 days later?
                 future_slice = df.iloc[i+1 : i+1+LOOKAHEAD_DAYS]
@@ -67,17 +71,23 @@ def run_simulation():
                 max_high = float(future_slice['High'].max())
                 min_low = float(future_slice['Low'].min())
                 
-                # Grade Intent (+5% target, -5% stop)
-                outcome = "DRAW"
-                if max_high >= current_price * 1.05: outcome = "WIN"
-                elif min_low <= current_price * 0.95: outcome = "LOSS"
+                # Same rule the live grader uses, so simulated and real
+                # outcomes land in the same distribution.
+                setup = gold.trade_setup.model_dump() if gold.trade_setup else None
+                outcome = resolve_outcome(
+                    verdict=gold.verdict,
+                    entry_price=current_price,
+                    setup=setup,
+                    max_high=max_high,
+                    min_low=min_low,
+                )
                 
                 if outcome in ["WIN", "LOSS"]:
                     batch_payloads.append({
                         "ticker": ticker,
                         "timeframe": "swing",
                         "date": simulated_date,
-                        "pipeline_version": "v1.0.0",
+                        "pipeline_version": PIPELINE_VERSION,
                         "silver_state": silver.model_dump() if hasattr(silver, 'model_dump') else silver.__dict__,
                         "gold_verdict": gold.model_dump() if hasattr(gold, 'model_dump') else gold.__dict__,
                         "actual_outcome": outcome,

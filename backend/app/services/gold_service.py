@@ -3,6 +3,14 @@ from app.schemas.gold import VerdictDraft, TradeSetup
 from config.gate_thresholds import GATE_THRESHOLDS as TH
 
 def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_capital: float = 100000.0) -> VerdictDraft:
+    # Position sizing multiplies this figure, so a negative or NaN value would
+    # produce a negative share count presented as a trade instruction. The
+    # schemas constrain it, but this layer is also called directly by the
+    # simulator and the CLI scripts, so it defends itself.
+    if available_capital is None or available_capital != available_capital:  # NaN
+        available_capital = 0.0
+    available_capital = max(0.0, float(available_capital))
+
     gates = {}
     watch_list = []
     tf = silver.timeframe
@@ -250,7 +258,12 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
     
     trade_setup = None
     # BUG FIX: Updated to check for "STRONG BUY" instead of the old "BUY_SETUP"
-    if verdict == "STRONG BUY" and tf in ["intraday", "swing", "positional"] and silver.atr_14:
+    if (
+        verdict == "STRONG BUY"
+        and tf in ["intraday", "swing", "positional"]
+        and silver.atr_14
+        and available_capital > 0
+    ):
         p = silver.current_price
         atr = silver.atr_14
         

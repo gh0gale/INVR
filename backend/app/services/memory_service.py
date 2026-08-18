@@ -90,3 +90,62 @@ async def manage_session_memory(session_id: str, user_id: str, user_msg: str, ai
             span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
             logger.error(f"Memory Service Error: {str(e)}")
             raise # Re-raise if necessary or handle
+
+# Rough token estimate. Four characters per token is the usual English
+# approximation and is close enough to keep a context window intact without
+# pulling in a tokenizer dependency for a job that only needs a ceiling.
+CHARS_PER_TOKEN = 4
+
+
+def _estimate_tokens(text: str) -> int:
+    return (len(text) + CHARS_PER_TOKEN - 1) // CHARS_PER_TOKEN
+
+
+def trim_to_token_budget(messages: list[dict], budget_tokens: int) -> list[dict]:
+    """Keeps the most recent messages that fit inside the budget.
+
+    Audit finding NEW-LLM-03: history was capped by message count, so ten long
+    turns could still overflow the window. Walks backwards so the newest turn is
+    never the one dropped.
+    """
+    kept: list[dict] = []
+    used = 0
+    for message in reversed(messages or []):
+        cost = _estimate_tokens(str(message.get("content", "")))
+        if used + cost > budget_tokens and kept:
+            break
+        kept.append(message)
+        used += cost
+    kept.reverse()
+    return kept
+
+
+async def load_working_memory(session_id: str, budget_tokens: int = 2400) -> list[dict]:
+    """Recent turns for one chat session, newest-last, within a token budget.
+
+    Audit finding NEW-LLM-01: `manage_session_memory` has always written this
+    column, but nothing ever read it back, so every tutor question was answered
+    with no memory of the previous one. Returns [] on any failure: losing history
+    degrades an answer, while raising here would break the whole reply.
+    """
+    if not session_id or not supabase:
+        return []
+    try:
+        res = (
+            supabase.table("chat_sessions")
+            .select("working_memory")
+            .eq("session_id", session_id)
+            .limit(1)
+            .execute()
+        )
+        if not res.data:
+            return []
+        history = res.data[0].get("working_memory") or []
+        usable = [
+            m for m in history
+            if isinstance(m, dict) and m.get("role") in ("human", "ai") and m.get("content")
+        ]
+        return trim_to_token_budget(usable, budget_tokens)
+    except Exception as e:
+        logger.warning("Could not load working memory for %s: %s", session_id, e)
+        return []

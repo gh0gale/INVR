@@ -10,28 +10,28 @@ INVR is a comprehensive algorithmic portfolio intelligence platform that fuses q
 
 ```mermaid
 flowchart TB
-    classDef layout fill:#030508,stroke:#10B981,stroke-width:2px,color:#fff;
-    classDef panel fill:#111827,stroke:#374151,stroke-width:1px,color:#d1d5db;
-    classDef highlight fill:#065f46,stroke:#34d399,stroke-width:2px,color:#fff;
+    classDef layout fill:#0F1114,stroke:#D9A03C,stroke-width:2px,color:#E8E4DA;
+    classDef panel fill:#15181D,stroke:#3B434D,stroke-width:1px,color:#9BA1A8;
+    classDef highlight fill:#23282F,stroke:#D9A03C,stroke-width:2px,color:#E8E4DA;
     
     subgraph UI["(React/Vite)"]
         direction TB
-        TopNav[" Search Bar & Brand Nav"]:::panel
+        TopNav["Ticker Search, Session Clock & Tape"]:::panel
         
         subgraph Workspace["Main Workspace Grid"]
             direction LR
             
             subgraph LeftCol["Left Panel"]
                 direction TB
-                Ledger[" Algorithmic Ledger (History)"]:::panel
-                Watchlist[" Watchlist (Favorites)"]:::panel
+                Ledger["Recent Runs (Algorithmic Ledger)"]:::panel
+                Watchlist["Watchlist (session only)"]:::panel
             end
             
             subgraph CenterCol["Active Asset Analysis"]
                 direction TB
-                Chart[" Catmull-Rom Price Chart & Splines"]:::panel
-                Metrics[" Silver Metrics Grid (RSI, ATR, SMAs)"]:::panel
-                Verdict[" Gold Verdict & ATR Trade Setup"]:::highlight
+                Ladder["Price Structure Ladder (SMAs, setup levels)"]:::panel
+                Metrics["Silver Metric Table (RSI, ATR, SMAs)"]:::panel
+                Verdict["Gold Verdict & ATR Trade Setup"]:::highlight
             end
             
             subgraph RightCol["AI Interaction"]
@@ -116,11 +116,12 @@ flowchart LR
 ## Key Features
 
 - **Multi-Layer Analysis Pipeline** - Tri-layer architecture (Bronze, Silver, Gold) isolating data ingestion, mathematical vectorization, and deterministic verdict logic.
-- **Hard Gate Validation** - Configurable threshold parameters governing secular trend validation, volatility limits, and cash flow stability.
+- **Hard Gate Validation** - Configurable threshold parameters governing secular trend validation, volatility limits, and cash flow stability. Money inputs are constrained at the schema and clamped again at the point of use, so a nonsensical capital figure yields no trade setup rather than a negative position size.
 - **Algorithmic Trade Setups** - Automated, mathematically driven generation of entry zones, stop losses, and target prices utilizing Average True Range (ATR) metrics.
-- **Interactive AI Tutor** - Context-aware, SSE-streaming conversational agent orchestrated via LangGraph, capable of fundamental analysis, definition lookups, and portfolio simulations.
-- **Hybrid Grading Engine** - Background drift analysis comparing historical algorithmic predictions against matured market outcomes to ensure continuous statistical accuracy.
-- **Liquid Glass UI** - Premium, highly responsive React/Vite frontend featuring Framer Motion micro-animations and Three.js ambient particle physics.
+- **Interactive AI Tutor** - Context-aware, SSE-streaming conversational agent orchestrated via LangGraph, offering tailored Indian market context, stock-linked definitional explanations, and strict "Header: Content" structured output.
+- **Hybrid Grading Engine** - Background drift analysis comparing historical predictions against matured market outcomes via a dedicated LangGraph state machine (`engine_room_graph.py`). Grader and simulator share one rule, every verdict including `MONITOR` is scoreable, and threshold changes are proposed from bootstrap intervals rather than a formula that only counted rows.
+- **End-to-End Observability** - OpenTelemetry & Arize Phoenix telemetry tracing root API requests, LangGraph node steps, and linking financial outcome scores to LLM generation spans.
+- **Terminal Interface** - React/Vite frontend built on a trading-terminal design system: charcoal surfaces, a single amber accent, hairline rules, monospaced figures, a live NSE session clock, a ticker tape of real ledger rows, and a scroll-advanced walkthrough of one real pipeline run. Every animation reports a fact; none is decorative.
 
 ## Quick Start
 
@@ -151,8 +152,8 @@ Meet **Aarav**, an intermediate swing trader looking to evaluate Reliance Indust
 3. **Data Fetching (Bronze Layer)**: The FastAPI backend securely pulls historical OHLCV data, balance sheets, and institutional activity vectors for the asset, while checking real-time market circuit breakers.
 4. **Metric Calculation (Silver Layer)**: The system executes Pandas-based vectorized math, instantly calculating localized momentum (RSI), price volatility (ATR), Moving Averages (20, 50, 200), and fundamental metrics (e.g., Book Value Growth, Free Cash Flow margins).
 5. **Deterministic Verdict (Gold Layer)**: The pipeline evaluates the computed vectors against strict, hard-coded gate thresholds (e.g., ensuring price > 200 SMA). With secular trend requirements met and no overbought signals flagged, it produces a "BUY ON DIP" verdict alongside an ATR-calculated Trade Setup (Entry Zone, Target, Stop Loss). 
-6. **AI Synthesis & Tutor Integration**: The LLM Synthesizer (via local Ollama) translates these metrics into a readable executive summary, bypassing hallucinations by strictly adhering to the injected Silver/Gold states. When Aarav asks: *"What if I allocate 50% of my portfolio to this?"* the LangGraph orchestrator intercepts the intent, routes it to the Portfolio Simulation node, and advises on diversification limits tailored to his predefined Moderate risk profile.
-7. **Ledger Archival**: The entire transaction, alongside the synthesized verdict and baseline metrics, is quietly committed to the `algorithmic_ledger` table in Supabase for future grading.
+6. **AI Synthesis & Tutor Integration**: The LLM Synthesizer (via local Ollama) translates these metrics into a readable executive summary, bypassing hallucinations by strictly adhering to the injected Silver/Gold states and formatting responses in clean "Header: Content" sections. When Aarav asks: *"What if I allocate 50% of my portfolio to this?"* the LangGraph orchestrator intercepts the intent, routes it to the Portfolio Simulation node, and advises on diversification limits tailored to his predefined Moderate risk profile.
+7. **Ledger Archival**: The entire transaction, alongside the synthesized verdict, baseline metrics, and OpenTelemetry `trace_id`, is quietly committed to the `algorithmic_ledger` table in Supabase for future grading.
 
 ## Architecture & Data Flow
 
@@ -209,21 +210,23 @@ flowchart TD
 
 ### 2. LangGraph Orchestrator
 - **State Machine Routing**: A multi-node Directed Acyclic Graph (DAG) that analyzes user intent and dynamically routes queries between distinct execution paths: News Analysis, Definition Lookups, Portfolio Modeling, or Core Analysis synthesis.
-- **Context Injection**: Safeguards the LLM by explicitly injecting real-time Gold and Silver context blocks into the prompt templates, anchoring the AI's reasoning in mathematical reality.
+- **Context Injection & Formatting**: Safeguards the LLM by explicitly injecting real-time Gold and Silver context blocks into the prompt templates, forcing Indian market contextualization and strict "Header: Content" response formatting.
 
 ### 3. The Engine Room (Background Evaluation)
-- **Grade Ledger**: A background job that scans the `algorithmic_ledger` for matured predictions, querying live historical data to score the system's past recommendations as Wins, Losses, or Draws based on ATR-driven targets.
-- **Drift Analysis**: Identifies statistical deviations by aggregating the graded ledger. If Win/Loss ratios for specific metrics (e.g., RSI thresholds, Volume requirements) skew negatively, the system proposes administrative recalibrations to the `gate_thresholds`.
+- **Grade Ledger**: Scans `algorithmic_ledger` for matured predictions and scores them against real market highs and lows using the ATR levels the user was actually shown. The live grader and the historical simulator call the same function (`scripts/_grading.py`), so backtest and production outcomes land in one comparable distribution.
+- **Every verdict is scoreable**: bullish calls are judged on reaching target, bearish calls on the drop they warned about, and `MONITOR` on whether a decisive move happened at all. When both levels are touched in one window the tie resolves against the prediction, so the record errs pessimistic rather than flattering.
+- **Drift Analysis & HITL Loop**: Seven of nine thresholds have a drift check. Each resamples the winning trades to build a bootstrap interval and proposes a change only when the configured gate sits outside it. Recalibrations route through the human-in-the-loop interrupt in `engine_room_graph.py` and are recorded in `GATE_THRESHOLDS_HISTORY`.
 
 ### 4. Interactive Workspace (Frontend)
-- **SSE Streaming Terminal**: Implements Server-Sent Events to provide real-time, typewriter-style token streaming directly from the FastAPI/Ollama backend.
-- **Responsive Data Rendering**: Dynamically parses the active ledger entry to render interactive asset price charts (using SVG paths/Catmull-Rom splines), algorithmic zones, and system confidence metrics.
+- **SSE Streaming Terminal**: Implements Server-Sent Events to stream tutor tokens from the FastAPI/Ollama backend, with a blinking caret while the stream is open.
+- **Real Data Only**: Renders the active ledger entry as a price-structure ladder (last price against its moving averages and the ATR-derived setup levels), a metric table, gate results, and the written explanation. The client is never sent a price series, so no chart is drawn from one.
 
 ## Technology Stack
 
-- **Frontend**: React 19, TypeScript, Vite, TailwindCSS, Framer Motion, @react-three/fiber
+- **Frontend**: React 19, TypeScript, Vite, TailwindCSS (no icon, animation, or charting library)
 - **Backend**: Python 3.12+, FastAPI, Uvicorn, Pandas, NumPy
-- **AI & Orchestration**: LangGraph, LangChain, Ollama (Local Llama 3)
+- **AI & Orchestration**: LangGraph, LangChain, Ollama (Local Llama 3 / Phi3)
+- **Observability**: OpenTelemetry SDK, Arize Phoenix (`telemetry.py`)
 - **Database & Auth**: Supabase (PostgreSQL)
 
 ## Project Structure
@@ -233,16 +236,23 @@ INVR/
 ├── backend/              # Python FastAPI Application
 │   ├── app/              # Core Application Logic
 │   │   ├── api/          # Route definitions (Analytics, Profile, Tutor)
-│   │   ├── pipeline/     # LangGraph workflows, nodes, and agents
-│   │   └── services/     # Bronze, Silver, and Gold layer implementations
-│   ├── config/           # Configurable thresholds and application settings
-│   └── scripts/          # The Engine Room (Grading, Drift Analysis, Simulators)
+│   │   ├── guardrails/   # Prompt injection & security guardrails
+│   │   ├── pipeline/     # LangGraph workflows (tutor_graph, engine_room_graph, memory_graph)
+│   │   ├── services/     # Bronze, Silver, Gold, Ledger, Memory, Profile services
+│   │   └── telemetry.py  # OpenTelemetry & Arize Phoenix tracing setup
+│   │   └── prompts.py    # Prompt versions and per-model token ceilings
+│   ├── config/           # Configurable thresholds (gate_thresholds.py)
+│   ├── migrations/       # SQL applied by hand (001_ledger_rls.sql)
+│   ├── scripts/          # The Engine Room, incl. the shared _grading.py rule
+│   └── tests/            # 70 unit tests, no Ollama or network required
 │
 ├── frontend/             # React Vite Application
+│   ├── DESIGN_RULES.md   # Binding design constraints, read before any UI change
 │   ├── src/
-│   │   ├── components/   # Modular UI elements
-│   │   ├── pages/        # Authentication, Onboarding, Workspace views
-│   │   └── context/      # Global application state (AuthContext)
+│   │   ├── components/   # Icons, skeletons, site chrome, analysis primitives
+│   │   ├── pages/        # Landing, Auth, Onboarding, Workspace, Terms, Privacy
+│   │   ├── context/       # Auth provider and useAuth hook
+│   │   └── index.css     # Design tokens and shared component classes
 │   └── package.json      # Dependencies and scripts
 │
 └── tests/                # System verifications and mathematical unit tests
@@ -251,6 +261,14 @@ INVR/
 ## Setup & Configuration
 
 ### 1. Configure Environment
+
+Both directories ship a `.env.example` documenting every variable. Copy it and
+fill in the values:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+```
 
 **Backend (`backend/.env`):**
 ```env
@@ -282,28 +300,70 @@ npm run dev
 ```
 The application will be available at `http://localhost:5173`.
 
+### 3. Apply the database policy
+
+```bash
+supabase db execute -f backend/migrations/001_ledger_rls.sql
+```
+
+This is not optional before anyone else uses the instance. It leaves reads open
+(ledger rows describe securities and carry no user identifier) and revokes every
+client-side write, protecting the prediction history the grading loop depends on.
+
 ## Testing & Maintenance
 
-### Run Unit Tests
-Ensure the foundational math (like CAGR calculations) remains accurate:
+### Run the test suite
+
+70 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
+interpolation, the shared grading rule, ledger versioning and the drift
+statistics. None of them need Ollama, Supabase or a network connection.
+
 ```bash
 cd backend
-pytest tests/
+pytest tests/                        # all 70, about 5 seconds
+pytest tests/test_gold_gates.py -v   # one file
 ```
 
-### Evaluate System Drift
-The Engine Room contains scripts to grade past predictions and analyze statistical drift in your configuration thresholds.
+They also run automatically on every push and pull request touching `backend/`
+via `.github/workflows/tests.yml`.
+
+### Apply the database policy
+
+Before exposing the app to anyone else, apply the row-level security migration.
+Without it the browser can delete rows from `algorithmic_ledger`, which is the
+shared record the Engine Room grades against.
+
+```bash
+# Supabase SQL editor, or:
+supabase db execute -f backend/migrations/001_ledger_rls.sql
+```
+
+### Evaluate system drift
+
+The Engine Room grades past predictions and looks for thresholds the evidence no
+longer supports. A change is proposed only when the configured gate falls
+outside a bootstrap interval of what winning trades actually did.
+
 ```bash
 cd backend
-python -m scripts.grade_ledger
-python -m scripts.analyze_drift
+python -m scripts.grade_ledger        # score matured predictions against real prices
+python -m scripts.analyze_drift       # propose threshold changes, with intervals
+python -m scripts.trigger_engine_room # human-in-the-loop approval
 ```
+
+### Versioning the ruleset
+
+`PIPELINE_VERSION` is `RULESET_VERSION` plus a SHA-256 fingerprint of
+`GATE_THRESHOLDS`. Editing any threshold produces a new version automatically,
+so predictions made under different rules are never graded as one cohort. Bump
+`RULESET_VERSION` by hand only for logic changes a threshold cannot express,
+such as adding a gate or changing an override.
 
 ## What Makes INVR Stand Out
 
 1. **Deterministic Foundations** - AI is strictly used for synthesis and interaction; core financial verdicts are derived from hard, vectorized mathematics rather than opaque LLM inferences.
 2. **Self-Evaluating** - The Engine Room grades the system's own past predictions, automatically highlighting drift and closing the feedback loop on algorithmic accuracy.
-3. **Immersive UI** - The Liquid Glass design system provides a premium, low-latency environment featuring custom graphics that feel like a next-generation institutional trading terminal.
+3. **Legible UI** - A trading-terminal design system: figures set in monospace so columns align, colour reserved for direction and verdict meaning, and every async surface carrying a real loading state. Motion is limited to what reports something, and each animation is documented against the fact it conveys in `frontend/DESIGN_RULES.md`.
 4. **Contextually Aware** - The LangGraph-powered AI Tutor remembers your financial goals, risk profile, and the mathematical reality of the active asset being analyzed.
 
 

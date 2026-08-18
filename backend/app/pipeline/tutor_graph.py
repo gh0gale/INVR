@@ -18,6 +18,7 @@ tracer = trace.get_tracer(__name__)
 
 from config.gate_thresholds import GATE_THRESHOLDS
 from app.schemas.tutor import TutorState
+from app.prompts import TUTOR_MAX_TOKENS, TUTOR_PROMPT_VERSION
 from app.tools.market_data import fetch_stock_news
 
 # Initialize Ollama Embeddings using the dedicated local embedding model
@@ -91,7 +92,11 @@ async def semantic_router_node(state: TutorState) -> Dict[str, Any]:
 async def news_tool_node(state: TutorState) -> TutorState:
     with tracer.start_as_current_span("news_tool_node"):
         logger.info("Fetching live market news...")
-        ticker = state["analysis_state"].get("ticker", "RELIANCE.NS")
+        ticker = (state.get("analysis_state") or {}).get("ticker")
+        if not ticker:
+            # Falling back to some other company's news would be worse than
+            # saying nothing, so say nothing.
+            return {"tool_data": "No ticker is loaded, so no news was fetched."}
         news_text = await fetch_stock_news(ticker)
         return {"tool_data": news_text}
 
@@ -100,29 +105,38 @@ def extract_relevant_state(analysis_state: Dict[str, Any], mode: str) -> str:
     if not analysis_state:
         return "{}"
     
-    if mode == "definition":
-        return "{}"  # Minimal state needed for purely educational definitions
-    
     extracted = {}
     extracted["ticker"] = analysis_state.get("ticker", "UNKNOWN")
+    extracted["timeframe"] = analysis_state.get("timeframe")
+    metrics = analysis_state.get("metrics") or {}
+
+    if mode == "definition":
+        # Enough to anchor the term to the stock actually on screen.
+        extracted["verdict"] = analysis_state.get("verdict")
+        extracted["metrics"] = metrics
+        return json.dumps(extracted, default=str)
     
     if mode == "portfolio":
         # Include risk, allocation, and current summary
         extracted["risk_warning"] = analysis_state.get("risk_warning")
         extracted["verdict"] = analysis_state.get("verdict")
+        extracted["trade_setup"] = analysis_state.get("trade_setup")
     elif mode == "scenario":
         # Include triggers, technicals
         extracted["tutor_triggers"] = analysis_state.get("tutor_triggers")
         extracted["what_to_watch"] = analysis_state.get("what_to_watch")
         extracted["verdict"] = analysis_state.get("verdict")
+        extracted["gate_results"] = analysis_state.get("gate_results")
+        extracted["metrics"] = metrics
     elif mode == "news":
         # Minimal context for news synthesis
         extracted["verdict"] = analysis_state.get("verdict")
         extracted["tutor_triggers"] = analysis_state.get("tutor_triggers")
     else: # fallback
         extracted["verdict"] = analysis_state.get("verdict")
-        
-    return json.dumps(extracted)
+        extracted["metrics"] = metrics
+
+    return json.dumps(extracted, default=str)
 
 # --- 3. GENERATION NODE ---
 async def generation_node(state: TutorState, config: RunnableConfig) -> TutorState:
@@ -131,33 +145,51 @@ async def generation_node(state: TutorState, config: RunnableConfig) -> TutorSta
         ticker = state["analysis_state"].get("ticker", "UNKNOWN")
         logger.info("Generating response via mode: %s", mode.upper())
         
-        llm = ChatOllama(model="llama3.1", temperature=0.3) 
+        llm = ChatOllama(
+            model="llama3.1",
+            temperature=0.3,
+            num_predict=TUTOR_MAX_TOKENS,
+        )
+        trace.get_current_span().set_attribute("prompt.version", TUTOR_PROMPT_VERSION)
         
         analysis_state_str = extract_relevant_state(state.get('analysis_state', {}), mode)
 
 
-        sys_instruction = f"""You are an elite quantitative financial tutor.
-        User Profile: Level: {{state['user_profile'].get('experience_level')}}, Goal: {{state['user_profile'].get('goal')}}.
-        
-        CRITICAL DIRECTIVES:
-        1. QUOTE-FIRST: When discussing the specific stock, anchor your answer using exact numbers from the Analysis State. 
-        2. ANALOGY-MAPPING: Tailor analogies to the user's experience level.
-        3. GRACEFUL FALLBACK: If the user asks to define a financial term, ALWAYS define it using a clear example.
-        
-        --- CURRENT ANALYSIS STATE ---
-        {{analysis_state_str}}
-        """
-        
+        profile = state.get("user_profile") or {}
+        experience = profile.get("experience_level", "intermediate")
+        goal = profile.get("goal", "wealth_growth")
+
+        # NOTE: single braces. These were doubled previously, which made every
+        # placeholder render literally and left the model with no context at
+        # all, so it invented whichever stock it felt like.
+        sys_instruction = f"""You are an elite quantitative financial tutor for the Indian market.
+User profile: experience {experience}, goal {goal}.
+
+THE STOCK CURRENTLY ON SCREEN IS {ticker}. Every answer must be about {ticker}.
+Never discuss or name a different company unless the user explicitly asks about one.
+
+CRITICAL DIRECTIVES:
+1. QUOTE-FIRST: anchor your answer in the exact numbers from the analysis state below.
+2. ANALOGY-MAPPING: tailor analogies to the user's experience level.
+3. CONTEXTUAL EXPLANATION: when defining a term, explain it against {ticker}'s own metrics and verdict rather than giving a generic definition.
+4. INDIAN CONTEXT: use INR and Indian market framing.
+5. CONCISE: short and direct. Reasoning and supporting figures, no filler.
+6. FORMAT: write in "Header: Content" blocks, each header on its own line. Mark headers with **double asterisks**. Do not write large paragraphs.
+
+--- CURRENT ANALYSIS STATE ---
+{analysis_state_str}
+"""
+
         if mode == "news" and state.get("tool_data"):
-            sys_instruction += f"\n\n--- LATEST NEWS ---\n{{state['tool_data']}}"
+            sys_instruction += f"\n\n--- LATEST NEWS ---\n{state['tool_data']}"
             sys_instruction += "\nSynthesize the recent news with the current analysis state."
         elif mode == "definition":
-            sys_instruction += "\nProvide a clear explanation of the requested term. Instead of repeating the overall stock verdict, use a brief, clear numeric example to show how the math works."
+            sys_instruction += f"\nExplain the requested term by linking it directly to {ticker}'s verdict and metrics. Show why it matters for this specific stock."
         elif mode == "portfolio":
-            sys_instruction += "\nEvaluate the user's question explicitly against their existing portfolio allocations and stated goals. Reference historical trends if applicable."
+            sys_instruction += "\nEvaluate the question against the user's stated allocations and goals."
         elif mode == "scenario":
-            sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of the triggers and why they mathematically matter. Cross-reference past historical reasoning to highlight trend shifts."
-            sys_instruction += f"\n\n--- STATIC GATE THRESHOLDS ---\n{{json.dumps(GATE_THRESHOLDS, indent=2)}}\nUse these static thresholds to explain why certain triggers are mathematically relevant."
+            sys_instruction += "\nBreak down the 'what_to_watch' conditions. Explain the mechanics of each trigger and why it matters mathematically."
+            sys_instruction += f"\n\n--- STATIC GATE THRESHOLDS ---\n{json.dumps(GATE_THRESHOLDS, indent=2)}\nUse these thresholds to explain why the triggers are relevant."
         elif mode == "fallback":
             sys_instruction += "\nProvide a general educational overview. Do not give specific financial advice."
 

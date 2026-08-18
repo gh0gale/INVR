@@ -1,42 +1,20 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
-
-export interface UserProfile {
-  id: string;
-  experience: string;
-  goal: string;
-  timeframe: string;
-  risk: string;
-  portfolio: Record<string, number>;
-  capital: number;
-  profile_version_hash?: string;
-  contradictions_flagged?: string[];
-  semantic_profile?: Record<string, any>;
-  created_at?: string;
-}
-
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  loading: boolean;
-  profile: UserProfile | null;
-  fetchProfile: (token: string) => Promise<UserProfile | null>;
-  setProfileState: (profile: UserProfile | null) => void;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import { apiUrl } from '../api';
+import { AuthContext, type UserProfile } from './auth';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  // Which user the current profile belongs to, so repeat events are ignored.
+  const lastUserId = useRef<string | null>(null);
 
   const fetchProfile = async (token: string): Promise<UserProfile | null> => {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/profiles/', {
+      const response = await fetch(apiUrl('/api/v1/profiles/'), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -61,38 +39,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    // 1. Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session) {
-        fetchProfile(session.access_token).finally(() => setLoading(false));
-      } else {
-        setLoading(false);
-      }
-    });
+    let active = true;
 
-    // 2. Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session) {
-        setLoading(true);
-        await fetchProfile(session.access_token);
-        setLoading(false);
-      } else {
+    /*
+      Supabase re-emits SIGNED_IN and TOKEN_REFRESHED whenever the tab regains
+      focus. The previous handler flipped `loading` back to true on every one of
+      those, which unmounted the whole routed tree and re-rendered the loading
+      screen. That is what made switching Chrome tabs look like a full page
+      reload, and it also wiped the workspace transcript and the selected stock.
+
+      So: resolve `loading` exactly once, and afterwards only refetch the
+      profile when the signed-in user actually changes.
+    */
+    const resolveInitial = async () => {
+      const {
+        data: { session: initial },
+      } = await supabase.auth.getSession();
+
+      if (!active) return;
+
+      setSession(initial);
+      setUser(initial?.user ?? null);
+      lastUserId.current = initial?.user?.id ?? null;
+
+      if (initial) await fetchProfile(initial.access_token);
+      if (active) setLoading(false);
+    };
+
+    void resolveInitial();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!active) return;
+
+      // Keep the token fresh for outgoing requests, but do not disturb the tree.
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+
+      if (event === 'SIGNED_OUT' || !nextSession) {
+        lastUserId.current = null;
         setProfile(null);
-        setLoading(false);
+        return;
       }
+
+      // A token refresh or a focus-triggered replay of the same session needs
+      // nothing more than the session update above.
+      const nextUserId = nextSession.user?.id ?? null;
+      if (nextUserId === lastUserId.current) return;
+
+      lastUserId.current = nextUserId;
+      void fetchProfile(nextSession.access_token);
     });
 
     return () => {
+      active = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const logout = async () => {
     await supabase.auth.signOut();
+    lastUserId.current = null;
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -103,12 +111,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
 };

@@ -2,31 +2,300 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer utilities {
-  .glass-panel {
-    @apply bg-[#0A0D14]/80 backdrop-blur-2xl border border-white/[0.06] shadow-2xl shadow-black/60;
+/*
+  Surface system.
+
+  No shadows and no blurs. Depth comes from four charcoal tones plus a hairline
+  rule, the way a terminal separates panes. Radius is a hierarchy signal:
+  structural panels are square, interactive controls take 2px, and only genuine
+  status dots are round.
+*/
+@layer components {
+  .panel {
+    @apply bg-term-900 border border-rule;
   }
 
-  .bg-grid {
-    background-size: 40px 40px;
-    background-image:
-      linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  .panel-sunk {
+    @apply bg-term-850 border border-rule;
   }
 
-  .perspective-1000 {
-    perspective: 1000px;
+  /* Small caps label. Every column head and field name. */
+  .label {
+    @apply text-2xs font-semibold uppercase tracking-label text-fg-3;
   }
 
-  /* Finance-focused gradient: exact teal → emerald two-stop */
-  .text-gradient-finance {
-    background: linear-gradient(90deg, #0D9488, #10B981);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  .label-accent {
+    @apply text-2xs font-semibold uppercase tracking-label text-accent;
+  }
+
+  /* Alignment without a second typeface. */
+  .num {
+    @apply tabular-nums;
+  }
+
+  /* Section heading, used across public pages and the workspace. */
+  .h-section {
+    @apply text-3xl font-bold tracking-tight text-fg md:text-4xl;
+  }
+
+  .h-panel {
+    @apply text-xl font-bold tracking-tight text-fg;
+  }
+
+  .control {
+    @apply rounded-[2px] border border-rule-strong bg-term-850 text-fg
+           outline-none transition-colors;
+  }
+
+  .control:focus-visible,
+  .control:focus-within {
+    @apply border-accent;
+  }
+
+  .field {
+    @apply control w-full px-3.5 py-3 text-base placeholder:text-fg-3;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-[2px] px-5 py-3
+           text-2xs font-semibold uppercase tracking-label
+           transition-colors disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-accent text-term-950 hover:bg-[#EEBB63]
+           disabled:bg-term-800 disabled:text-fg-3;
+  }
+
+  .btn-quiet {
+    @apply btn border border-rule-strong bg-transparent text-fg-2
+           hover:border-accent hover:text-accent
+           disabled:border-rule disabled:text-fg-3;
+  }
+
+  .btn-lg {
+    @apply px-7 py-4 text-xs;
+  }
+
+  .link {
+    @apply text-accent underline decoration-rule-strong underline-offset-[3px]
+           hover:decoration-accent;
+  }
+
+  /* Keyboard hint, used in the command bar and the tutor composer. */
+  .kbd {
+    @apply rounded-[2px] border border-rule-strong px-1.5 py-0.5 text-2xs
+           font-semibold text-fg-3;
   }
 }
 
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/*
+  ---------------------------------------------------------------------------
+  Motion inventory.
+
+  Every animation below reports something: a value arriving, a magnitude, an
+  evaluation order, a session state, an open stream, work in progress, or the
+  order the pipeline runs in. None of it exists to make the page feel alive,
+  which is why the prohibitions on animated arrows and decorative hover motion
+  still hold. All of it collapses under prefers-reduced-motion.
+  ---------------------------------------------------------------------------
+*/
+
+/* Work in progress. */
+.skeleton {
+  @apply bg-term-800;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* A model stream is still open. */
+.caret::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  background: currentColor;
+  vertical-align: text-bottom;
+  animation: caret-blink 1s step-end infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* The exchange session is open. One slow pulse, matched to the live label. */
+.session-live {
+  animation: session-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes session-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/*
+  Ticker tape. The track holds the same row twice, so translating by half its
+  width loops seamlessly. Paused on hover and on focus so a reader can read it.
+*/
+.tape-track {
+  animation: tape-scroll var(--tape-duration, 45s) linear infinite;
+  will-change: transform;
+}
+
+.tape:hover .tape-track,
+.tape:focus-within .tape-track {
+  animation-play-state: paused;
+}
+
+@keyframes tape-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/*
+  Gate results stamp in, in the order the engine evaluated them. The stagger is
+  the information: this is a sequence, not a set.
+*/
+.stamp-in {
+  animation: stamp-in 320ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes stamp-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* A figure has arrived or changed. Brief, once, no loop. */
+.value-in {
+  animation: value-in 420ms ease-out both;
+}
+
+@keyframes value-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+  Hero signal chain. A stage becomes current, then hands off to the next, which
+  is the mechanism the product is actually selling. The connector grows in the
+  direction the data travels.
+*/
+.chain-in {
+  animation: chain-in 400ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes chain-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.link-draw {
+  transform-origin: left center;
+  animation: link-draw 460ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes link-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .caret::after,
+  .session-live,
+  .tape-track,
+  .stamp-in,
+  .value-in,
+  .chain-in,
+  .link-draw {
+    animation: none !important;
+  }
+
+  .link-draw {
+    transform: none !important;
+  }
+
+  /* Magnitude bars and meters settle instantly rather than growing. */
+  .measure {
+    transition: none !important;
+  }
+}
+
+/* Magnitude bars, confidence meters, progress. Width is the value. */
+.measure {
+  transition: width 700ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
 body {
-  @apply bg-[#030508] text-white font-sans overflow-x-hidden m-0 p-0 min-h-screen selection:bg-emerald-500/30;
+  @apply bg-term-950 text-fg font-sans m-0 p-0 min-h-screen overflow-x-hidden
+         selection:bg-accent selection:text-term-950;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Keep browser autofill inside the terminal palette. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 40px #1b1f25 inset !important;
+  -webkit-text-fill-color: #edeae2 !important;
+  caret-color: #edeae2;
 }

@@ -1,14 +1,35 @@
 from datetime import datetime
+import hashlib
+import json
 import logging
 from opentelemetry import trace
 from app.database import supabase_admin as supabase
+from config.gate_thresholds import GATE_THRESHOLDS
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
-# Set your current algorithm version here. 
-# Update this whenever you change gate thresholds!
-PIPELINE_VERSION = "v1.0.0"
+"""
+Ledger version.
+
+This string is part of the de-duplication key (ticker, timeframe, date,
+version), and the Engine Room groups wins and losses by it. Bumping it by hand
+was the plan; in practice it sat at v1.0.0 across a threshold change and two
+prompt rewrites, so predictions made under different rules were graded as one
+cohort (audit finding NEW-BE-06).
+
+The ruleset half is therefore derived, not remembered: any edit to
+GATE_THRESHOLDS produces a new fingerprint automatically. Bump RULESET_VERSION
+by hand only for logic changes that thresholds cannot express, such as adding a
+gate or changing an override.
+"""
+RULESET_VERSION = "v1.1.0"
+
+_THRESHOLD_FINGERPRINT = hashlib.sha256(
+    json.dumps(GATE_THRESHOLDS, sort_keys=True).encode("utf-8")
+).hexdigest()[:8]
+
+PIPELINE_VERSION = f"{RULESET_VERSION}-{_THRESHOLD_FINGERPRINT}"
 
 async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdict_draft: dict, llm_output: dict = None):
     """

@@ -1,7 +1,7 @@
 import json
 from fastapi import APIRouter, BackgroundTasks, Request, Depends
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 import logging
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 from app.schemas.tutor import ChatRequest
 from app.pipeline.tutor_graph import build_tutor_graph
-from app.services.memory_service import manage_session_memory
+from app.services.memory_service import load_working_memory, manage_session_memory
 from app.services.guardrail_service import check_input_safety
 from app.api.deps import get_current_user_id
 from app.telemetry import wrap_background_task
@@ -42,8 +42,19 @@ async def chat_stream(request: Request, request_data: ChatRequest, background_ta
     # ==========================================
     # NORMAL EXECUTION LAYER
     # ==========================================
+    # Prior turns for this session. Without this the tutor answered every
+    # question cold, because working_memory was written but never read back
+    # (audit finding NEW-LLM-01). Trimmed to a token budget rather than a
+    # message count, so ten long turns cannot overflow the window.
+    history = await load_working_memory(request_data.session_id)
+    prior = [
+        HumanMessage(content=m["content"]) if m["role"] == "human"
+        else AIMessage(content=m["content"])
+        for m in history
+    ]
+
     initial_state = {
-        "messages": [HumanMessage(content=request_data.message)],
+        "messages": [*prior, HumanMessage(content=request_data.message)],
         "analysis_state": request_data.analysis_context,
         "user_profile": request_data.user_profile,
         "routed_mode": "",

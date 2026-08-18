@@ -1,10 +1,15 @@
 import os
+import sys
 import time
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
+
+# Run either as `python -m scripts.grade_ledger` or `python backend/scripts/grade_ledger.py`.
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from scripts._grading import resolve_outcome
 
 load_dotenv(override=True)
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
@@ -46,22 +51,15 @@ def grade_trades():
                 max_high = float(future_df['High'].max())
                 min_low = float(future_df['Low'].min())
                 
-                # Intent Evaluation
-                outcome = "DRAW"
-                trade_setup = row["gold_verdict"].get("trade_setup")
-                if trade_setup:
-                    target_up = trade_setup["target_1"]
-                    stop_down = trade_setup["stop_loss"]
-                else:
-                    target_up = entry_price * 1.05
-                    stop_down = entry_price * 0.95
-                
-                if verdict in ["STRONG BUY", "BUY ON DIP"]:
-                    if max_high >= target_up: outcome = "WIN"
-                    elif min_low <= stop_down: outcome = "LOSS"
-                elif verdict in ["CAUTION", "AVOID"]:
-                    if min_low <= stop_down: outcome = "WIN"
-                    elif max_high >= target_up: outcome = "LOSS"
+                # Intent evaluation, shared with the historical simulator so
+                # backtest and live outcomes are directly comparable.
+                outcome = resolve_outcome(
+                    verdict=verdict,
+                    entry_price=entry_price,
+                    setup=row["gold_verdict"].get("trade_setup"),
+                    max_high=max_high,
+                    min_low=min_low,
+                )
                 
                 # Update DB
                 supabase.table("algorithmic_ledger").update({"actual_outcome": outcome, "max_favorable_excursion": max_high, "max_adverse_excursion": min_low}).eq("log_id", row["log_id"]).execute()

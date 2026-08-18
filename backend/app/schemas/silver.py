@@ -28,12 +28,13 @@ class SilverMetrics(BaseModel):
     institutional_bias: Optional[str] = None  # "buyer", "seller", "neutral"
 
     # --- Positional & Long-Term Core Fundamentals ---
+    # NOTE: fields are declared here only once silver_service actually populates
+    # them. Five placeholders were removed on 2026-08-18 (audit NEW-BE-13); they
+    # had never been computed and serialised as null into every ledger row.
     revenue_cagr_3y: Optional[float] = None
     profit_cagr_3y: Optional[float] = None
     opm_trend: Optional[str] = None  # "expanding", "stable", "contracting"
     roe_vs_cost_of_capital: Optional[bool] = None
-    cfo_vs_net_profit: Optional[float] = None
-    promoter_holding_trend: Optional[str] = None  # "accumulating", "stable", "decreasing"
     valuation_comfort: Optional[float] = None
 
     # --- Long-Term Compounder Metrics ---
@@ -42,7 +43,4 @@ class SilverMetrics(BaseModel):
     fcf_conversion: Optional[float] = None
     roe_consistency_5y: Optional[str] = None  # "consistent_moat", "average", "volatile"
     debt_trajectory: Optional[str] = None  # "deleveraging", "stable", "leveraging"
-    book_value_growth: Optional[float] = None
-    promoter_conviction_trend: Optional[float] = None
     pe_band_vs_growth: Optional[float] = None
-    dividend_consistency: Optional[bool] = None

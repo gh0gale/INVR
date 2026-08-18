@@ -12,6 +12,7 @@ from opentelemetry import trace
 
 from app.schemas.state import AnalysisState
 from app.schemas.llm import AnalysisOutput
+from app.prompts import SYNTHESIZER_MAX_TOKENS, SYNTHESIZER_PROMPT_VERSION
 
 from app.services.bronze_service import build_bronze_payload
 from app.services.silver_service import compute_silver_metrics
@@ -109,7 +110,12 @@ async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
         
         try:
             # Standard inference without structural wrapper to allow CoT reasoning
-            llm = ChatOllama(model="llama3.1", temperature=0.0)
+            llm = ChatOllama(
+                model="llama3.1",
+                temperature=0.0,
+                num_predict=SYNTHESIZER_MAX_TOKENS,
+            )
+            span.set_attribute("prompt.version", SYNTHESIZER_PROMPT_VERSION)
             
             # Sanitize untrusted input to prevent prompt injection
             safe_silver = (silver.model_dump_json(exclude_none=True) if hasattr(silver, 'model_dump_json') else str(silver)).replace("<", "&lt;").replace(">", "&gt;")
@@ -122,50 +128,50 @@ async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
             if state.get("correction_note"):
                 correction_instruction = f"\nCRITICAL CORRECTION REQUIRED FROM PREVIOUS ATTEMPT:\n{state['correction_note']}\nFix this specific schema error."
 
-            sys_prompt = f"""You are an elite quantitative financial synthesizer. You translate mathematical verdicts into deep, institutional-grade tear sheets.
+            sys_prompt = f"""You are an elite quantitative financial synthesizer. You translate mathematical verdicts into institutional-grade tear sheets.
 
 CRITICAL INSTRUCTIONS:
 1. Before producing the final JSON, think through your reasoning inside <thinking>...</thinking> tags.
 2. Do NOT include any analysis inside the JSON keys themselves. The JSON must exactly match the schema.
 3. Output strictly valid JSON immediately after your thinking block.
-4. EVERY claim MUST be backed by exact numbers from the metrics.
-5. 'tutor_triggers' MUST be an array of 2-4 single financial jargon words ONLY.{{correction_instruction}}
+4. EVERY claim MUST be backed by exact numbers from the metrics below.
+5. 'tutor_triggers' MUST be an array of 2-4 single financial jargon words ONLY.{correction_instruction}
+6. Use "Header: Content" formatting instead of long paragraphs. Each header starts on a new line and is marked with **double asterisks**.
 
 REQUIRED JSON SCHEMA:
 {{
     "personalized_reasoning": [
         "INVESTMENT THESIS & PROFILE ALIGNMENT",
-        "- [Write 2 detailed sentences explaining if the trajectory matches the user goal, citing specific data].",
-        "- [Write 2 detailed sentences analyzing the risk fit for the investor]."
+        "- [2 detailed sentences on whether the trajectory matches the user goal, citing specific data].",
+        "- [2 detailed sentences analysing the risk fit for this investor]."
     ],
     "what_to_watch": [
-        "- [Actionable Condition] -- Current: [value]. [Explain why this level acts as a critical structural pivot].",
-        "KEY RISK MONITOR: [Weakest metric]. [Explain exactly how deterioration threatens capital]."
+        "- [Actionable condition] -- Current: [value]. [Why this level is a structural pivot].",
+        "KEY RISK MONITOR: [Weakest metric]. [How deterioration threatens capital]."
     ],
-    "risk_warning": "[1 mandatory sentence regarding the highest risk data point]",
+    "risk_warning": "[1 mandatory sentence on the highest risk data point]",
     "tutor_triggers": ["string (jargon)", "string (jargon)"]
 }}
 
 --- QUANTITATIVE DATA ---
-TICKER: {{state['ticker']}}
-TIMEFRAME: {{state['timeframe']}}
-USER GOAL: {{user.get('goal', 'growth')}}
-USER RISK: {{user.get('risk_tolerance', 'moderate')}}
+TICKER: {state['ticker']}
+TIMEFRAME: {state['timeframe']}
+USER GOAL: {user.get('goal', 'growth')}
+USER RISK: {user.get('risk_tolerance', 'moderate')}
 
-VERDICT: {{_safe_get(gold, 'verdict', 'MONITOR')}}
-PRIMARY REASON: {{_safe_get(gold, 'primary_reason', '')}}
-GATE RESULTS: {{str(_safe_get(gold, 'gate_results', {{}}))}}
-ACTIONABLE CONDITIONS: {{safe_watch}}
+VERDICT: {_safe_get(gold, 'verdict', 'MONITOR')}
+PRIMARY REASON: {_safe_get(gold, 'primary_reason', '')}
+GATE RESULTS: {str(_safe_get(gold, 'gate_results', {}))}
+ACTIONABLE CONDITIONS: {safe_watch}
 
-SILVER METRICS: {{safe_silver}}
-
+SILVER METRICS: {safe_silver}
 """
 
             response = await llm.ainvoke([SystemMessage(content=sys_prompt)])
             
             thinking, clean_json_str = strip_thinking_block(response.content)
             if thinking:
-                logger.info(f"LLM CoT Execution Completed. (Thinking length: {{len(thinking)}} chars)")
+                logger.info("LLM CoT Execution Completed. (Thinking length: %d chars)", len(thinking))
                 
             span.set_attribute("sanitized_output", clean_json_str)
             

@@ -14,6 +14,19 @@ from app.config import settings
 
 # Hardcoded sector mapping for prototype 
 # TODO: [PRODUCTION] Move this to a Supabase lookup table.
+# The sector index is only used for relative strength and the market-regime
+# read, and regime needs 200 bars of history. A swing run fetches 6mo of daily
+# bars (~126), which meant `market_regime` was never computed and the bearish
+# override in the Gold layer was dead code on the default horizon
+# (audit finding NEW-BE-08). Both series are indexed from the right, so a longer
+# sector window leaves relative strength unchanged.
+SECTOR_PERIOD = {
+    "intraday": "5d",
+    "swing": "2y",
+    "positional": "2y",
+    "long_term": "5y",
+}
+
 SECTOR_INDEX_MAP = {
     "Auto": "^CNXAUTO",
     "IT": "^CNXIT",
@@ -73,10 +86,11 @@ async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
         index_ticker = SECTOR_INDEX_MAP.get(sector_name)
         
         if index_ticker:
-            cache_key_sector = f"sector:{index_ticker}:{manifest['period']}:{manifest['interval']}"
+            sector_period = SECTOR_PERIOD.get(timeframe, manifest['period'])
+            cache_key_sector = f"sector:{index_ticker}:{sector_period}:{manifest['interval']}"
             sector_df = await get_cached_dataframe(cache_key_sector, ttl)
             if sector_df is None:
-                sector_df = await fetch_yfinance_history(index_ticker, manifest['period'], manifest['interval'])
+                sector_df = await fetch_yfinance_history(index_ticker, sector_period, manifest['interval'])
                 await set_cached_dataframe(cache_key_sector, sector_df, ttl)
 
 

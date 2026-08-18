@@ -1,124 +1,109 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/auth';
 import Landing from './pages/Landing';
 import Onboarding from './pages/Onboarding';
-import Workspace from './pages/Workspace';
 import Auth from './pages/Auth';
-import { motion } from 'framer-motion';
 
-// Premium loading screen keeping with liquid glass theme
+/*
+  Split off the routes a first-time visitor does not need. The landing page is
+  the entry point and stays in the main chunk; the workspace pulls in the whole
+  analysis component tree, and the legal pages are rarely the first stop.
+*/
+const Workspace = lazy(() => import('./pages/Workspace'));
+const Terms = lazy(() => import('./pages/Terms'));
+const Privacy = lazy(() => import('./pages/Privacy'));
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+/** Session check in progress. States what is happening rather than spinning. */
 function LoadingScreen() {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#030508] text-white">
-      <div className="relative w-24 h-24 flex items-center justify-center">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-          className="absolute inset-0 rounded-[1rem] border-2 border-emerald-500/20 border-t-emerald-500"
-        />
-        <motion.span
-          animate={{ opacity: [0.4, 1, 0.4] }}
-          transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
-          className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-400"
-        >
-          INVR
-        </motion.span>
+    <div className="flex min-h-screen items-center justify-center bg-term-950" role="status">
+      <div className="flex flex-col items-center gap-3">
+        <span className="text-2xl font-bold tracking-tight text-fg">INVR<span className="text-accent">.</span></span>
+        <span className="label">Checking your session</span>
+        <span className="skeleton h-px w-40" />
       </div>
     </div>
   );
 }
 
-// Protected Route Guard
-function ProtectedRoute({ children, requireProfile = true }: { children: React.ReactElement; requireProfile?: boolean }) {
+function ProtectedRoute({
+  children,
+  requireProfile = true,
+}: {
+  children: React.ReactElement;
+  requireProfile?: boolean;
+}) {
   const { user, loading, profile } = useAuth();
   const location = useLocation();
 
-  if (loading) {
-    return <LoadingScreen />;
-  }
-
-  if (!user) {
-    // Redirect to login page but save current location
-    return <Navigate to="/auth" state={{ from: location }} replace />;
-  }
-
-  if (requireProfile && !profile) {
-    // Force onboarding if they don't have a profile
-    return <Navigate to="/onboarding" replace />;
-  }
-
-  if (!requireProfile && profile) {
-    // Already has profile, skip onboarding and go straight to workspace
-    return <Navigate to="/workspace" replace />;
-  }
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
+  if (requireProfile && !profile) return <Navigate to="/onboarding" replace />;
+  if (!requireProfile && profile) return <Navigate to="/workspace" replace />;
 
   return children;
 }
 
-// Public Route Guard (blocks /auth if user is logged in)
+/** Blocks /auth once a session exists. */
 function PublicRoute({ children }: { children: React.ReactElement }) {
   const { user, loading, profile } = useAuth();
 
-  if (loading) {
-    return <LoadingScreen />;
-  }
-
-  if (user) {
-    if (profile) {
-      return <Navigate to="/workspace" replace />;
-    } else {
-      return <Navigate to="/onboarding" replace />;
-    }
-  }
+  if (loading) return <LoadingScreen />;
+  if (user) return <Navigate to={profile ? '/workspace' : '/onboarding'} replace />;
 
   return children;
 }
 
 function AppRoutes() {
   return (
-    <Routes>
+    <Suspense fallback={<LoadingScreen />}>
+      <Routes>
       <Route path="/" element={<Landing />} />
-      
-      <Route 
-        path="/auth" 
+      <Route path="/terms" element={<Terms />} />
+      <Route path="/privacy" element={<Privacy />} />
+
+      <Route
+        path="/auth"
         element={
           <PublicRoute>
             <Auth />
           </PublicRoute>
-        } 
+        }
       />
-      
-      <Route 
-        path="/onboarding" 
+
+      <Route
+        path="/onboarding"
         element={
           <ProtectedRoute requireProfile={false}>
             <Onboarding />
           </ProtectedRoute>
-        } 
+        }
       />
-      
-      <Route 
-        path="/workspace" 
+
+      <Route
+        path="/workspace"
         element={
           <ProtectedRoute requireProfile={true}>
             <Workspace />
           </ProtectedRoute>
-        } 
+        }
       />
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 
-function App() {
+export default function App() {
   return (
-    <AuthProvider>
-      <AppRoutes />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
-
-export default App;

@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from opentelemetry import trace
 
+from app.prompts import MEMORY_MAX_TOKENS, MEMORY_PROMPT_VERSION
+
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
@@ -28,7 +30,12 @@ async def extract_memory_chunk(chat_chunk: str, current_semantic_profile: Dict[s
         logger.info("Running background extraction (Unified Pass)...")
         
         # We use a lower temp (0.0) for strict data extraction
-        llm = ChatOllama(model="llama3.1", temperature=0.0)
+        llm = ChatOllama(
+            model="llama3.1",
+            temperature=0.0,
+            num_predict=MEMORY_MAX_TOKENS,
+        )
+        span.set_attribute("prompt.version", MEMORY_PROMPT_VERSION)
         structured_llm = llm.with_structured_output(MemoryUpdate)
         
         prompt = ChatPromptTemplate.from_messages([
