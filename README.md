@@ -244,7 +244,7 @@ INVR/
 │   ├── config/           # Configurable thresholds (gate_thresholds.py)
 │   ├── migrations/       # SQL applied by hand (001_ledger_rls.sql)
 │   ├── scripts/          # The Engine Room, incl. the shared _grading.py rule
-│   └── tests/            # 70 unit tests, no Ollama or network required
+│   └── tests/            # 132 unit tests, no Ollama or network required
 │
 ├── frontend/             # React Vite Application
 │   ├── DESIGN_RULES.md   # Binding design constraints, read before any UI change
@@ -314,29 +314,59 @@ client-side write, protecting the prediction history the grading loop depends on
 
 ### Run the test suite
 
-70 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
+132 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
 interpolation, the shared grading rule, ledger versioning and the drift
-statistics. None of them need Ollama, Supabase or a network connection.
+statistics, that persisted values fit their columns, that one account's analysis
+history stays its own, that fundamental ratios are normalised to the unit their
+threshold uses, and that no configured threshold is left unread by any gate.
+None of them need Ollama, Supabase or a network connection.
 
 ```bash
 cd backend
-pytest tests/                        # all 70, about 5 seconds
+pytest tests/                        # all 132, about 3 seconds
 pytest tests/test_gold_gates.py -v   # one file
 ```
 
 They also run automatically on every push and pull request touching `backend/`
 via `.github/workflows/tests.yml`.
 
-### Apply the database policy
+### Apply the database policies
 
-Before exposing the app to anyone else, apply the row-level security migration.
-Without it the browser can delete rows from `algorithmic_ledger`, which is the
-shared record the Engine Room grades against.
+These migrations must be run by hand against a new deployment. On the current
+database they are already applied.
 
 ```bash
 # Supabase SQL editor, or:
 supabase db execute -f backend/migrations/001_ledger_rls.sql
+supabase db execute -f backend/migrations/003_user_scoped_history.sql
 ```
+
+**001** revokes client writes on `algorithmic_ledger`. Without it the browser
+can delete rows from the shared record the Engine Room grades against.
+
+**002** is optional and only normalises a column width — see the file.
+
+**003** adds `prediction_interactions.user_id` and enables row-level security on
+`chat_sessions` and `user_profiles`. Without it the anon key that ships in the
+browser bundle can read every user's conversation text and capital amount, and
+the workspace cannot tell one account's analysis history from another's.
+
+**004** creates the `watchlists` table. Without it the star button in the
+workspace logs an error and the list stays empty.
+
+### Verify the whole system end to end
+
+With the server running, Ollama up and the migrations applied:
+
+```bash
+cd backend
+python e2e_verify.py
+```
+
+It drives the live stack - real auth, real pipeline, real Supabase, real Ollama,
+real yfinance - and prints PASS or FAIL for each shipped feature with the
+evidence it used. 28 checks, all currently passing. This is the check that
+found four defects the unit suite could not see.
 
 ### Evaluate system drift
 

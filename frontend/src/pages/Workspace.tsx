@@ -39,8 +39,10 @@ export default function Workspace() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<'recent' | 'watchlist'>('recent');
 
-  // Watchlist is local to the session. It starts empty rather than pre-seeded
-  // with tickers the user never chose.
+  // Persisted per account in the `watchlists` table (migration 004). It used to
+  // be session state, so the star button looked broken: it forgot everything on
+  // reload (audit NEW-FE-15). Still starts empty rather than pre-seeded with
+  // tickers the user never chose.
   const [watchlist, setWatchlist] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -54,7 +56,26 @@ export default function Workspace() {
   ]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [sessionId] = useState(() => crypto.randomUUID());
+  // One chat session per account, persisted. It used to be a fresh
+  // crypto.randomUUID() on every mount, so a page reload started a new session
+  // and the tutor's working memory was always empty however well the backend
+  // stored it (audit finding ISO-03). Keyed by user id so switching accounts
+  // never inherits the previous account's conversation.
+  const userId = session?.user?.id ?? null;
+  const [sessionId, setSessionId] = useState('');
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!userId) return;
+    const key = `invr.session.${userId}`;
+    let existing = localStorage.getItem(key);
+    if (!existing) {
+      existing = crypto.randomUUID();
+      localStorage.setItem(key, existing);
+    }
+    setSessionId(existing);
+  }, [userId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const silver = activeItem?.silver_state;
@@ -69,33 +90,72 @@ export default function Workspace() {
   const scrollLog = () =>
     setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 120);
 
-  // Most recent run per ticker, five tickers deep.
-  const fetchLedger = async () => {
-    if (!session) return;
+  /*
+    This user's most recent run per ticker, five tickers deep.
+
+    Read through `prediction_interactions`, not `algorithmic_ledger` directly.
+    The ledger is shared by design: it is deduplicated on
+    (ticker, timeframe, date, pipeline_version) so one deterministic verdict is
+    stored once and graded once by the Engine Room, which means it carries no
+    user_id to filter on. Selecting from it directly showed every account the
+    same globally-newest rows - two people signed in and saw each other's
+    stocks (audit finding ISO-01). The interaction table is the ownership
+    record, and RLS in migrations/003 enforces the same scope server-side so
+    the filter below is defence in depth rather than the only guard.
+  */
+  const fetchWatchlist = async () => {
+    if (!userId) return;
     try {
       const { data, error } = await supabase
-        .from('algorithmic_ledger')
-        .select('*')
+        .from('watchlists')
+        .select('ticker')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setWatchlist((data ?? []).map((row) => (row as { ticker: string }).ticker));
+    } catch (err) {
+      // A failed watchlist read must not take the workspace down with it.
+      console.error('Could not read your watchlist:', err);
+    }
+  };
+
+  const fetchLedger = async () => {
+    if (!userId) return;
+    try {
+      const { data, error } = await supabase
+        .from('prediction_interactions')
+        .select('created_at, algorithmic_ledger(*)')
+        .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(100);
 
       if (error) throw error;
 
-      if (data && data.length > 0) {
-        const seen = new Set<string>();
-        const deduped = (data as LedgerRow[])
-          .filter((item) => {
-            if (seen.has(item.ticker)) return false;
-            seen.add(item.ticker);
-            return true;
-          })
-          .slice(0, 5);
+      // PostgREST types a foreign-table embed as an array even when the
+      // relationship is many-to-one, and returns an object at runtime, so
+      // accept either shape rather than asserting one.
+      const rows = (data ?? [])
+        .flatMap((row) => {
+          const joined = (row as unknown as { algorithmic_ledger: unknown }).algorithmic_ledger;
+          return Array.isArray(joined) ? joined : joined ? [joined] : [];
+        })
+        .filter((row): row is LedgerRow => row != null) as LedgerRow[];
 
-        setLedgerItems(deduped);
-        setActiveItem((current) => current ?? deduped[0] ?? null);
-      }
+      // A user can view the same prediction many times, so dedupe on ticker
+      // after ordering rather than trusting the interaction rows to be unique.
+      const seen = new Set<string>();
+      const deduped = rows
+        .filter((item) => {
+          if (seen.has(item.ticker)) return false;
+          seen.add(item.ticker);
+          return true;
+        })
+        .slice(0, 5);
+
+      setLedgerItems(deduped);
+      setActiveItem((current) => current ?? deduped[0] ?? null);
     } catch (err) {
-      console.error('Could not read the algorithmic ledger:', err);
+      console.error('Could not read your analysis history:', err);
     } finally {
       setLedgerLoading(false);
     }
@@ -104,11 +164,18 @@ export default function Workspace() {
   // Reads the ledger when a session appears. This is the sanctioned "subscribe
   // to an external system" case: the database is the external system, and the
   // resulting setState lands in a later microtask, not during render.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // Clear first, so switching accounts never shows the previous account's
+    // rows while the new read is in flight.
+    setLedgerItems([]);
+    setActiveItem(null);
+    setLedgerLoading(true);
     void fetchLedger();
+    void fetchWatchlist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [userId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   /*
     Hides a run from this session's list. It deliberately does NOT delete the
@@ -123,10 +190,38 @@ export default function Workspace() {
     if (activeItem?.log_id === logId) setActiveItem(null);
   };
 
-  const toggleWatch = (ticker: string) =>
-    setWatchlist((prev) =>
-      prev.includes(ticker) ? prev.filter((t) => t !== ticker) : [...prev, ticker],
-    );
+  /*
+    Optimistic toggle: the star flips immediately and the row is written behind
+    it, because waiting on a round trip to acknowledge a bookmark feels broken.
+    A failed write rolls the local state back rather than leaving the UI showing
+    something the database does not agree with.
+  */
+  const toggleWatch = async (ticker: string) => {
+    if (!userId) return;
+    const wasWatched = watchlist.includes(ticker);
+    setWatchlist((prev) => (wasWatched ? prev.filter((t) => t !== ticker) : [...prev, ticker]));
+
+    try {
+      if (wasWatched) {
+        const { error } = await supabase
+          .from('watchlists')
+          .delete()
+          .eq('user_id', userId)
+          .eq('ticker', ticker);
+        if (error) throw error;
+      } else {
+        // upsert, not insert: the unique (user_id, ticker) constraint makes a
+        // double-click idempotent instead of an error.
+        const { error } = await supabase
+          .from('watchlists')
+          .upsert({ user_id: userId, ticker }, { onConflict: 'user_id,ticker' });
+        if (error) throw error;
+      }
+    } catch (err) {
+      setWatchlist((prev) => (wasWatched ? [...prev, ticker] : prev.filter((t) => t !== ticker)));
+      appendLog({ role: 'sys', text: `Could not update the watchlist: ${errorMessage(err, 'write failed')}` });
+    }
+  };
 
   const runAnalysis = async (rawTicker: string) => {
     if (!session) {
@@ -180,10 +275,14 @@ export default function Workspace() {
         appendLog({ role: 'sys', text: `Pipeline error: ${pipelineError}` });
 
         // Fall back to the last stored run so the panels are not left blank.
+        // Scoped by timeframe: the ledger dedup key is
+        // (ticker, timeframe, date, version), so an unscoped lookup could
+        // surface a row produced for someone else's horizon (ISO-06).
         const { data: staleData } = await supabase
           .from('algorithmic_ledger')
           .select('*')
           .or(`ticker.eq.${apiTicker},ticker.eq.${rawClean}`)
+          .eq('timeframe', payload.timeframe)
           .order('created_at', { ascending: false })
           .limit(1);
 
@@ -203,6 +302,7 @@ export default function Workspace() {
         .from('algorithmic_ledger')
         .select('*')
         .or(`ticker.eq.${apiTicker},ticker.eq.${rawClean}`)
+        .eq('timeframe', payload.timeframe)
         .order('created_at', { ascending: false })
         .limit(1);
 

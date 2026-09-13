@@ -10,6 +10,9 @@ from supabase import create_client
 # Run either as `python -m scripts.grade_ledger` or `python backend/scripts/grade_ledger.py`.
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from scripts._grading import resolve_outcome
+from scripts._log import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv(override=True)
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
@@ -18,7 +21,7 @@ supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_
 TIMEFRAMES = {"swing": 15, "positional": 90, "long_term": 365}
 
 def grade_trades():
-    print("🔍 ORACLE: Grading Matured Predictions against Market Reality...")
+    logger.info("🔍 ORACLE: Grading Matured Predictions against Market Reality...")
     
     for timeframe, days_to_wait in TIMEFRAMES.items():
         cutoff_date = (datetime.utcnow() - timedelta(days=days_to_wait)).date().isoformat()
@@ -26,10 +29,10 @@ def grade_trades():
         pending_rows = supabase.table("algorithmic_ledger").select("*").eq("actual_outcome", "PENDING").eq("timeframe", timeframe).lte("date", cutoff_date).execute().data
             
         if not pending_rows:
-            print("✅ No matured pending rows to grade today.")
+            logger.info("✅ No matured pending rows to grade today.")
             continue
             
-        print(f" ⚙️ Found {len(pending_rows)} matured {timeframe} predictions. Fetching reality...")
+        logger.info(f" ⚙️ Found {len(pending_rows)} matured {timeframe} predictions. Fetching reality...")
         
         for row in pending_rows:
             ticker = row["ticker"]
@@ -64,9 +67,9 @@ def grade_trades():
                 # Update DB
                 supabase.table("algorithmic_ledger").update({"actual_outcome": outcome, "max_favorable_excursion": max_high, "max_adverse_excursion": min_low}).eq("log_id", row["log_id"]).execute()
             except Exception as e:
-                print(f"Failed to grade {ticker}: {e}")
+                logger.warning(f"Failed to grade {ticker}: {e}")
                 
-    print("✅ GRADING COMPLETE.")
+    logger.info("✅ GRADING COMPLETE.")
 
 if __name__ == "__main__":
     grade_trades()

@@ -31,3 +31,14 @@ SYNTHESIZER_MAX_TOKENS = 1200
 TUTOR_MAX_TOKENS = 900
 MEMORY_MAX_TOKENS = 400
 GUARDRAIL_MAX_TOKENS = 8
+
+
+# --- Caching -----------------------------------------------------------------
+# Audit finding P4-06. How long a synthesised narrative stays valid.
+#
+# Six hours, chosen against the data rather than the clock: the ledger is keyed
+# by calendar date, so two runs of the same ticker on the same trading day are
+# already treated as one prediction. A shorter TTL would re-run inference for
+# an answer the ledger considers identical; a longer one would carry a
+# narrative across a session boundary into a day whose prices have moved.
+SYNTHESIS_CACHE_TTL = 6 * 60 * 60

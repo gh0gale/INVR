@@ -27,6 +27,9 @@ from supabase import create_client
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.gate_thresholds import GATE_THRESHOLDS as TH
+from scripts._log import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv(override=True)
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
@@ -43,10 +46,16 @@ BOOTSTRAP_SEED = 20260818
 # booleans (`debt_flag`, `roe_vs_cost_of_capital`) rather than as the raw ratio,
 # so the ledger holds no distribution to measure. Checking them means recording
 # the raw values first; until then, saying so beats a fabricated check.
-UNCHECKABLE = {
-    "debt_equity_max": "silver_state stores debt_flag (bool), not the raw ratio",
-    "roe_min": "silver_state stores roe_vs_cost_of_capital (bool), not raw ROE",
-}
+# Thresholds that still have no measurable distribution. Both entries here were
+# resolved on 2026-08-23 by recording the raw ratios in SilverMetrics
+# (debt_to_equity, roe_pct), so the dict is empty rather than deleted: the loop
+# that reports it is the honest way to surface a future gap.
+UNCHECKABLE: dict[str, str] = {}
+
+# Rows written before 2026-08-23 carry only the boolean flags, so these two
+# checks operate on a smaller sample than the technical ones until enough new
+# predictions mature. `check_threshold` already skips a metric with fewer than
+# MIN_SUBSET non-null values, which is what makes that safe.
 
 
 def bootstrap_quantile_ci(values: np.ndarray, q: float, draws: int = BOOTSTRAP_DRAWS):
@@ -96,7 +105,7 @@ def propose(metric: str, current: float, suggested: float, reason: str, sample: 
             f"The configured gate of {current} sits outside it."
         ),
     }).execute()
-    print(f" INSIGHT: {metric} {current} -> {round(suggested, 3)} (confidence {confidence})")
+    logger.info(f" INSIGHT: {metric} {current} -> {round(suggested, 3)} (confidence {confidence})")
 
 
 def check_threshold(wins: pd.DataFrame, column: str, metric: str, quantile: float,
@@ -110,7 +119,7 @@ def check_threshold(wins: pd.DataFrame, column: str, metric: str, quantile: floa
         return
     values = wins[column].dropna().to_numpy(dtype=float)
     if len(values) < MIN_SUBSET:
-        print(f" skipped {metric}: only {len(values)} graded rows carry this metric")
+        logger.info(f" skipped {metric}: only {len(values)} graded rows carry this metric")
         return
 
     current = float(TH[metric])
@@ -127,7 +136,7 @@ def check_threshold(wins: pd.DataFrame, column: str, metric: str, quantile: floa
 
 
 def analyze_system_drift():
-    print("INITIALISING STATISTICAL DRIFT ENGINE")
+    logger.info("INITIALISING STATISTICAL DRIFT ENGINE")
 
     logs = (
         supabase.table("algorithmic_ledger")
@@ -139,7 +148,7 @@ def analyze_system_drift():
     )
 
     if len(logs) < MIN_SAMPLE:
-        print(f"Only {len(logs)} graded rows. Need {MIN_SAMPLE} for significance.")
+        logger.info(f"Only {len(logs)} graded rows. Need {MIN_SAMPLE} for significance.")
         return
 
     df = pd.DataFrame([{
@@ -155,6 +164,11 @@ def analyze_system_drift():
         "eps_cagr_5y": log["silver_state"].get("eps_cagr_5y"),
         "revenue_cagr_5y": log["silver_state"].get("revenue_cagr_5y"),
         "revenue_cagr_3y": log["silver_state"].get("revenue_cagr_3y"),
+        # Raw fundamental ratios, recorded from 2026-08-23. Rows written before
+        # that carry only debt_flag / roe_vs_cost_of_capital booleans and land
+        # here as None, which check_threshold drops before resampling.
+        "debt_to_equity": log["silver_state"].get("debt_to_equity"),
+        "roe_pct": log["silver_state"].get("roe_pct"),
     } for log in logs])
 
     df["vol_ratio"] = df["vol"] / df["avg_vol"]
@@ -164,19 +178,22 @@ def analyze_system_drift():
     # the mix so a reader knows whether the sample is comparable.
     versions = df["version"].dropna().unique()
     if len(versions) > 1:
-        print(f" NOTE: sample spans {len(versions)} pipeline versions: {', '.join(map(str, versions))}")
+        logger.info(f" NOTE: sample spans {len(versions)} pipeline versions: {', '.join(map(str, versions))}")
 
     wins = df[df["outcome"] == "WIN"]
     losses = df[df["outcome"] == "LOSS"]
-    print(f" Auditing {len(wins)} wins against {len(losses)} losses")
+    logger.info(f" Auditing {len(wins)} wins against {len(losses)} losses")
 
     if len(wins) < MIN_SUBSET:
-        print(f" Not enough winning trades ({len(wins)}) to measure against.")
+        logger.info(f" Not enough winning trades ({len(wins)}) to measure against.")
         return
 
     # --- Technical gates ---------------------------------------------------
     check_threshold(wins, "rsi", "rsi_overbought", 0.90, "ceiling",
                     "90% of winners entered below this RSI.", margin=3.0)
+    check_threshold(wins, "rsi", "rsi_oversold", 0.10, "floor",
+                    "Winners rarely entered this deep into oversold territory.",
+                    margin=3.0)
 
     vol_low, vol_high, vol_point = bootstrap_quantile_ci(
         wins["vol_ratio"].dropna().to_numpy(dtype=float), 0.50
@@ -204,10 +221,22 @@ def analyze_system_drift():
                     "Winners grow revenue faster than the configured floor.",
                     margin=1.0)
 
-    for metric, why in UNCHECKABLE.items():
-        print(f" no check for {metric}: {why}")
+    # Recorded as raw ratios since 2026-08-23 (audit NEW-BE-11b). Before that
+    # silver_state held only booleans, which have no distribution to resample.
+    check_threshold(wins, "debt_to_equity", "debt_equity_max", 0.90, "ceiling",
+                    "Winning trades carried materially less leverage than the gate allows.",
+                    margin=0.25)
+    check_threshold(wins, "roe_pct", "roe_min", 0.10, "floor",
+                    "Winners earn a higher return on equity than the configured floor.",
+                    margin=2.0)
 
-    print("DRIFT ANALYSIS COMPLETE")
+    if UNCHECKABLE:
+        for metric, why in UNCHECKABLE.items():
+            logger.info(f" no check for {metric}: {why}")
+    else:
+        logger.info(f" all {len(TH)} configured thresholds have a drift check")
+
+    logger.info("DRIFT ANALYSIS COMPLETE")
 
 
 if __name__ == "__main__":

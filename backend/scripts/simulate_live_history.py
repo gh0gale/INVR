@@ -16,6 +16,9 @@ from app.services.gold_service import evaluate_hard_gates
 from app.services.ledger_service import PIPELINE_VERSION
 from config.gate_thresholds import GATE_THRESHOLDS as TH
 from scripts._grading import resolve_outcome
+from scripts._log import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv(override=True)
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
@@ -24,11 +27,11 @@ TICKERS = ["RELIANCE.NS", "HDFCBANK.NS", "TCS.NS", "INFY.NS", "ICICIBANK.NS"]
 LOOKAHEAD_DAYS = 15 # Standard swing trade horizon
 
 def run_simulation():
-    print("🚀 RUNNING TIME MACHINE: Simulating 2 years of live production using your Silver Layer...")
+    logger.info("🚀 RUNNING TIME MACHINE: Simulating 2 years of live production using your Silver Layer...")
     batch_payloads = []
     
     for ticker in TICKERS:
-        print(f"📡 Processing historical feed for {ticker}...")
+        logger.info(f"📡 Processing historical feed for {ticker}...")
         df = yf.download(ticker, period="2y", interval="1d", progress=False)
         if df.empty: continue
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
@@ -97,11 +100,11 @@ def run_simulation():
 
     if batch_payloads:
         supabase.table("algorithmic_ledger").upsert(batch_payloads).execute()
-        print(f"✅ Injected {len(batch_payloads)} fully graded production logs based purely on your existing code.")
+        logger.info(f"✅ Injected {len(batch_payloads)} fully graded production logs based purely on your existing code.")
     else:
-        print("⚠️ No trades passed your gates.")
+        logger.warning("⚠️ No trades passed your gates.")
 
 if __name__ == "__main__":
     start = time.time()
     run_simulation()
-    print(f"⏱️ Done in {round(time.time() - start, 2)}s")
+    logger.info(f"⏱️ Done in {round(time.time() - start, 2)}s")

@@ -31,12 +31,18 @@ _THRESHOLD_FINGERPRINT = hashlib.sha256(
 
 PIPELINE_VERSION = f"{RULESET_VERSION}-{_THRESHOLD_FINGERPRINT}"
 
-async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdict_draft: dict, llm_output: dict = None):
+async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdict_draft: dict, llm_output: dict = None, user_id: str = None):
     """
-    Handles the Hybrid Ledger logic: 
+    Handles the Hybrid Ledger logic:
     1. Checks if the exact prediction exists today.
     2. Writes it if it doesn't.
     3. Attaches the user interaction trace.
+
+    `user_id` is what makes the interaction row attributable. The ledger row
+    itself stays shared and user-agnostic on purpose: it is deduplicated on
+    (ticker, timeframe, date, pipeline_version) so one deterministic verdict is
+    stored once and graded once. Ownership lives on the interaction, which is
+    how the workspace scopes a user's history (audit finding ISO-01).
     """
     ticker = verdict_draft.get("ticker", "UNKNOWN")
     timeframe = verdict_draft.get("timeframe", "UNKNOWN")
@@ -92,7 +98,8 @@ async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdic
             interaction_entry = {
                 "log_id": log_id,
                 "session_id": session_id,
-                "action_taken": "viewed"
+                "action_taken": "viewed",
+                "user_id": user_id,
             }
             supabase.table("prediction_interactions").insert(interaction_entry).execute()
             logger.info("User interaction ('viewed') logged for session %s.", session_id)

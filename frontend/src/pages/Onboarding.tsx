@@ -90,13 +90,19 @@ export default function Onboarding() {
   const totalAlloc = formData.portfolio.reduce((a, b) => a + (Number(b.value) || 0), 0);
   const allocComplete = totalAlloc === 100;
 
+  // No rows at all is a valid answer: it means "I hold only cash". The backend
+  // accepts an empty portfolio for exactly that reason, and requiring an
+  // allocation here forced new investors to invent one (audit E2E-01).
+  const holdsNothing = formData.portfolio.length === 0;
+
   const isStepComplete = (): boolean => {
     if (activeQuestion.type === 'choice') {
       return formData[activeQuestion.id as QuestionId] !== '';
     }
     if (activeQuestion.type === 'allocation') {
+      if (holdsNothing) return true;
       const allNamed = formData.portfolio.every((p) => p.name.trim() !== '');
-      return allocComplete && allNamed && formData.portfolio.length > 0;
+      return allocComplete && allNamed;
     }
     if (activeQuestion.type === 'numeric') {
       return formData.capital !== '' && Number(formData.capital) > 0;
@@ -118,7 +124,11 @@ export default function Onboarding() {
     setLoading(true);
     setSubmitError(null);
 
-    const finalPortfolio = formData.portfolio.reduce(
+    // Rows with no name are dropped rather than sent as "": a blank key would
+    // be stored as a holding the user never named.
+    const finalPortfolio = formData.portfolio
+      .filter((p) => p.name.trim() !== '')
+      .reduce(
       (acc, curr) => {
         acc[curr.name] = Number(curr.value) / 100.0;
         return acc;
@@ -343,7 +353,13 @@ export default function Onboarding() {
                   <IconPlus className="h-3.5 w-3.5" />
                   Add a holding
                 </button>
-                {!allocComplete && (
+                {holdsNothing && (
+                  <p className="mt-3 text-sm text-fg-3">
+                    No holdings yet? Continue without adding any. You can analyse stocks
+                    and build this up later.
+                  </p>
+                )}
+                {!holdsNothing && !allocComplete && (
                   <p className="text-xs text-fg-3">
                     {totalAlloc > 100
                       ? `Remove ${totalAlloc - 100} percent to reach 100.`

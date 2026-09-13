@@ -98,6 +98,21 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
             else:
                 gates["rsi"] = "PASS"
 
+        # Balance Sheet.
+        # `debt_equity_max` was configured but read by no gate, so the metric
+        # was computed, stored in every ledger row and ignored (audit FIX-01).
+        # WARN rather than FAIL: leverage is a risk on a swing horizon, not a
+        # disqualifier the way an overbought RSI is. Skipped entirely when the
+        # ratio is unknown, so absent data never scores as a pass.
+        if silver.debt_flag is not None:
+            if silver.debt_flag:
+                gates["balance_sheet"] = "WARN"
+                watch_list.append(
+                    f"Debt/equity is above the {TH['debt_equity_max']}x ceiling. Size the position smaller than usual."
+                )
+            else:
+                gates["balance_sheet"] = "PASS"
+
 
     elif tf == "positional":
         # Death Cross Gate
@@ -119,6 +134,19 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
                 watch_list.append(f"Revenue CAGR is lagging the {TH['revenue_cagr_min']*100}% target.")
             else:
                 gates["revenue_growth"] = "PASS"
+
+        # Capital Efficiency.
+        # Same story as the swing balance-sheet gate: `roe_min` decided nothing.
+        # It stays a WARN because a single year of weak ROE is a question, not a
+        # verdict, and the long-term timeframe already judges ROE consistency.
+        if silver.roe_vs_cost_of_capital is not None:
+            if silver.roe_vs_cost_of_capital:
+                gates["capital_efficiency"] = "PASS"
+            else:
+                gates["capital_efficiency"] = "WARN"
+                watch_list.append(
+                    f"Return on equity is below the {TH['roe_min']}% quality bar for a positional hold."
+                )
 
 
     elif tf == "long_term":
@@ -170,7 +198,9 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         "secular_trend": "Long-Term Trend (200 DMA)",
         "fcf_quality": "Free Cash Flow Conversion",
         "eps_growth": "EPS Compounding",
-        "valuation": "Valuation Comfort Ceiling"
+        "valuation": "Valuation Comfort Ceiling",
+        "balance_sheet": "Balance Sheet Leverage",
+        "capital_efficiency": "Return on Equity"
     }
 
     # 2. Extract exactly what failed/warned and what passed
@@ -243,7 +273,10 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         "eps_growth": 2.0, "fcf_quality": 2.0, "volume": 1.5,
         "volume_spike": 1.5, "trend": 1.5, "sector": 1.5,
         "micro_trend": 1.0, "rsi": 1.0, "revenue_growth": 1.0,
-        "valuation": 2.0
+        "valuation": 2.0,
+        # Fundamental health carries less weight than trend structure on these
+        # horizons: it explains why a name is risky, not when to act on it.
+        "balance_sheet": 1.5, "capital_efficiency": 1.5
     }
     if not gates:
         confidence_score = 50.0

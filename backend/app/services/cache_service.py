@@ -8,13 +8,24 @@ from typing import Optional
 # TODO: [PRODUCTION] Migrate this entire file to use Redis. 
 # Currently using local JSON file caching to save DB read/writes and avoid Docker during local testing.
 
-CACHE_DIR = os.path.join(os.getcwd(), ".local_cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
+# Resolved per call rather than at import. A module-level constant baked in the
+# working directory at import time, which made the cache location impossible to
+# redirect - so a test suite silently shared the developer's real cache and
+# results depended on what had been run before. Honours INVR_CACHE_DIR.
+def _cache_dir() -> str:
+    path = os.environ.get("INVR_CACHE_DIR") or os.path.join(os.getcwd(), ".local_cache")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+# Kept as a module attribute for callers that log or inspect it.
+CACHE_DIR = _cache_dir()
+
 
 def _get_filepath(key: str) -> str:
     """Sanitize the cache key to create a valid Windows/Linux filename."""
     safe_key = key.replace(":", "_").replace("^", "")
-    return os.path.join(CACHE_DIR, f"{safe_key}.json")
+    return os.path.join(_cache_dir(), f"{safe_key}.json")
 
 def _is_expired(filepath: str, ttl_seconds: int) -> bool:
     """Check if the file modification time is older than the TTL."""

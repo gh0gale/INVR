@@ -99,12 +99,16 @@ async def process_pipeline(request: Request, payload: PipelineRequest, backgroun
             # Telemetry: Wrap the background task so the Trace ID survives the thread hop
             traced_ledger_task = wrap_background_task(log_prediction_to_ledger)
     
+            # user_id is passed so the interaction row is attributable. Without
+            # it the workspace could not tell one account's runs from another's
+            # and showed every user the same rows (audit finding ISO-01).
             background_tasks.add_task(
                 traced_ledger_task,
                 session_id,
                 silver_data,
                 gold_data,
-                llm_output
+                llm_output,
+                user_id
             )
     
         return PipelineResponse(

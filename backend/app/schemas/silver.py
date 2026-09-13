@@ -25,6 +25,10 @@ class SilverMetrics(BaseModel):
     pe_vs_sector_avg: Optional[float] = None
     trailing_pe: Optional[float] = None
     debt_flag: Optional[bool] = None
+    # Raw ratio behind debt_flag, normalised to a multiple (1.5 = 1.5x equity).
+    # Recorded because a boolean has no distribution to resample, which is why
+    # `debt_equity_max` had no drift check (audit NEW-BE-11b).
+    debt_to_equity: Optional[float] = None
     institutional_bias: Optional[str] = None  # "buyer", "seller", "neutral"
 
     # --- Positional & Long-Term Core Fundamentals ---
@@ -35,6 +39,9 @@ class SilverMetrics(BaseModel):
     profit_cagr_3y: Optional[float] = None
     opm_trend: Optional[str] = None  # "expanding", "stable", "contracting"
     roe_vs_cost_of_capital: Optional[bool] = None
+    # Raw ROE behind the flag, normalised to a percentage (18.0 = 18%).
+    # Same reason as debt_to_equity above.
+    roe_pct: Optional[float] = None
     valuation_comfort: Optional[float] = None
 
     # --- Long-Term Compounder Metrics ---

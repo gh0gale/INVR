@@ -9,6 +9,20 @@ import pytest
 from app.schemas.silver import SilverMetrics
 
 
+
+@pytest.fixture(autouse=True)
+def isolated_cache(tmp_path, monkeypatch):
+    """Point the local file cache at a per-test directory.
+
+    Without this the synthesis cache added for P4-06 persists in
+    `backend/.local_cache/` between runs, so a cached narrative made
+    `llm_synthesizer_node` return before it ever built a prompt - and the prompt
+    tests asserted against an empty string. Hidden on-disk state deciding
+    whether a test passes is exactly the failure mode the cache must not have.
+    """
+    monkeypatch.setenv("INVR_CACHE_DIR", str(tmp_path / "cache"))
+
+
 def make_silver(**overrides) -> SilverMetrics:
     """A swing profile that passes every gate unless a test says otherwise."""
     base = dict(

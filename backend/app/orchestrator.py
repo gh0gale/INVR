@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import hashlib
 import logging
 from typing import Dict, Any, List
 from langchain_ollama import ChatOllama
@@ -12,11 +13,12 @@ from opentelemetry import trace
 
 from app.schemas.state import AnalysisState
 from app.schemas.llm import AnalysisOutput
-from app.prompts import SYNTHESIZER_MAX_TOKENS, SYNTHESIZER_PROMPT_VERSION
+from app.prompts import SYNTHESIS_CACHE_TTL, SYNTHESIZER_MAX_TOKENS, SYNTHESIZER_PROMPT_VERSION
 
 from app.services.bronze_service import build_bronze_payload
 from app.services.silver_service import compute_silver_metrics
 from app.services.gold_service import evaluate_hard_gates
+from app.services.cache_service import get_cached_dict, set_cached_dict
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -99,6 +101,30 @@ def _safe_get(obj, attr, default=None):
 # ==========================================
 # NODE 3: The LLM Synthesizer (Platinum)
 # ==========================================
+def _quantize_for_key(value: Any, places: int = 6) -> Any:
+    """Round floats recursively so a cache key survives a JSON round-trip.
+
+    Bronze caches its price frame with `DataFrame.to_json`, and pandas writes
+    fewer significant digits than a float64 carries: 1390.1500244140625 comes
+    back as 1390.1500244141. The first run of a ticker therefore builds its
+    Silver metrics from full-precision yfinance floats and every later run
+    builds them from the trimmed ones, so a hash over the raw values changed
+    between run 1 and run 2 - and the synthesis cache missed precisely the
+    repeat it exists to serve.
+
+    Six decimal places is far finer than any gate distinguishes (the tightest
+    is a 0.05 sector-RS margin) while being coarse enough to absorb the
+    serialisation noise.
+    """
+    if isinstance(value, float):
+        return round(value, places)
+    if isinstance(value, dict):
+        return {k: _quantize_for_key(v, places) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_quantize_for_key(v, places) for v in value]
+    return value
+
+
 async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
     if state.get("errors"): return {}
     
@@ -108,6 +134,49 @@ async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
         user = state['user_profile']
         silver = state['silver']
         
+        # Audit finding P4-06. The synthesizer is the slowest node in the graph
+        # (a local llama3.1 pass) and its inputs are fully deterministic: the
+        # same ticker, timeframe, Gold verdict and Silver metrics always warrant
+        # the same narrative. Re-analysing a stock the same day therefore reran
+        # a multi-second generation to produce the identical paragraph.
+        #
+        # The key is a hash of everything the prompt interpolates, INCLUDING the
+        # prompt version and the user's goal and risk. Leaving those out would
+        # serve a conservative investor the aggressive investor's wording, which
+        # is a correctness bug wearing a performance fix's clothing. A retry
+        # carrying a correction_note skips the cache entirely, since the whole
+        # point of that pass is to produce something different.
+        cache_key = None
+        if not state.get("correction_note"):
+            cache_key = "llm_synth_" + hashlib.sha256(
+                json.dumps(
+                    {
+                        "prompt_version": SYNTHESIZER_PROMPT_VERSION,
+                        "ticker": state["ticker"],
+                        "timeframe": state["timeframe"],
+                        "goal": user.get("goal"),
+                        "risk": user.get("risk_tolerance"),
+                        "verdict": _safe_get(gold, "verdict", None),
+                        "reason": _safe_get(gold, "primary_reason", None),
+                        "gates": str(_safe_get(gold, "gate_results", {})),
+                        "silver": _quantize_for_key(
+                            silver.model_dump(exclude_none=True)
+                            if hasattr(silver, "model_dump")
+                            else str(silver)
+                        ),
+                    },
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()[:32]
+
+            cached = await get_cached_dict(cache_key, SYNTHESIS_CACHE_TTL)
+            if cached and cached.get("raw_json_string"):
+                span.set_attribute("llm.cache", "hit")
+                span.set_attribute("prompt.version", SYNTHESIZER_PROMPT_VERSION)
+                logger.info("Synthesis cache hit for %s. Skipping inference.", state["ticker"])
+                return {"llm_output": {"raw_json_string": cached["raw_json_string"]}}
+            span.set_attribute("llm.cache", "miss")
+
         try:
             # Standard inference without structural wrapper to allow CoT reasoning
             llm = ChatOllama(
@@ -174,7 +243,13 @@ SILVER METRICS: {safe_silver}
                 logger.info("LLM CoT Execution Completed. (Thinking length: %d chars)", len(thinking))
                 
             span.set_attribute("sanitized_output", clean_json_str)
-            
+
+            # Stored only after a clean generation. The validation node may
+            # still reject it, but an unparseable response is cheap to detect
+            # and would otherwise be cached and re-served for the whole TTL.
+            if cache_key and clean_json_str:
+                await set_cached_dict(cache_key, {"raw_json_string": clean_json_str}, SYNTHESIS_CACHE_TTL)
+
             # Return the raw string to the validation node
             return {"llm_output": {"raw_json_string": clean_json_str}}
             

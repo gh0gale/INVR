@@ -5,6 +5,49 @@ from app.schemas.bronze import BronzePayload
 from app.schemas.silver import SilverMetrics
 from config.gate_thresholds import GATE_THRESHOLDS as TH
 
+def _normalize_roe_pct(raw) -> Optional[float]:
+    """Return on equity as a percentage, whichever unit the source used.
+
+    yfinance reports `returnOnEquity` as a fraction (0.1845 = 18.45%), but some
+    fallback keys and cached rows carry it already in percent. `roe_min` in
+    gate_thresholds.py is expressed in percent, so everything is normalised to
+    that before any comparison.
+
+    The ambiguity is resolved by magnitude: a fraction above 1.0 would be a
+    100%+ return on equity, which is rare enough that treating values <= 1.0 as
+    fractions is the safer reading. Returns None for missing data rather than
+    0.0, so "no data" is never scored as "bad ROE".
+    """
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value != value:  # NaN
+        return None
+    return value * 100.0 if -1.0 <= value <= 1.0 else value
+
+
+def _normalize_debt_to_equity(raw) -> Optional[float]:
+    """Debt/equity as a multiple, whichever unit the source used.
+
+    yfinance reports this as a percentage (150.0 = 1.5x equity), while
+    `debt_equity_max` is a multiple (1.5). Values above 10 are read as
+    percentages; a genuine 10x-equity debt load is far rarer than the
+    percentage encoding. Returns None for missing data.
+    """
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value != value or value < 0:
+        return None
+    return value / 100.0 if value > 10 else value
+
+
 def calculate_cagr(history_list: list) -> Optional[float]:
     """Helper method to mathematically calculate CAGR from list profiles safely."""
     if not history_list or len(history_list) < 2 or history_list[0] <= 0:
@@ -100,24 +143,31 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
     inst = bronze.institutional_activity or {}
 
     if tf == "swing":
-        # Valuation & Debt Flags (Using robust fallbacks for dict keys)
+        # Relative valuation is only computed when a real sector median exists.
+        # It used to fall back to a hardcoded 25.0, which produced a confident
+        # number out of no data (audit FIX-03). None is the honest answer, and
+        # matches how institutional_bias and the P1-01 stub already behave.
         pe = f.get("trailingPE", f.get("pe_ratio", 0.0))
-        if pe > 0:
-            m["pe_vs_sector_avg"] = float(pe - f.get("sector_pe_median", 25.0))
-            
-        # yfinance typically returns Debt/Equity as a percentage (e.g., 150 = 1.5)
-        de = f.get("debtToEquity", f.get("debt_to_equity", 0.0))
-        m["debt_flag"] = bool(de > (TH["debt_equity_max"] * 100) or (0 < de < 10 and de > TH["debt_equity_max"]))
-        
-        # Institutional Bias Processing Engine
-        fii_net = inst.get("fii_net_activity", 0.0)
-        dii_net = inst.get("dii_net_activity", 0.0)
-        if fii_net + dii_net > 50: 
-            m["institutional_bias"] = "buyer"
-        elif fii_net + dii_net < -50:
-            m["institutional_bias"] = "seller"
+        sector_pe = f.get("sector_pe_median")
+        if pe > 0 and sector_pe:
+            m["pe_vs_sector_avg"] = float(pe - float(sector_pe))
         else:
-            m["institutional_bias"] = "neutral"
+            m["pe_vs_sector_avg"] = None
+
+        de = _normalize_debt_to_equity(f.get("debtToEquity", f.get("debt_to_equity")))
+        m["debt_to_equity"] = de
+        m["debt_flag"] = bool(de > TH["debt_equity_max"]) if de is not None else None
+
+        # Institutional bias needs institutional data. The source is not wired
+        # up (P1-01), and an empty dict used to arrive here as fii=0, dii=0 and
+        # leave as a confident "neutral" - a reading manufactured from nothing.
+        fii_net = inst.get("fii_net_activity")
+        dii_net = inst.get("dii_net_activity")
+        if fii_net is None and dii_net is None:
+            m["institutional_bias"] = None
+        else:
+            net = (fii_net or 0.0) + (dii_net or 0.0)
+            m["institutional_bias"] = "buyer" if net > 50 else ("seller" if net < -50 else "neutral")
 
     elif tf == "positional":
         # Fallback Chain: Try 3Y CAGR list -> Fallback to standard YoY Revenue Growth
@@ -135,14 +185,22 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
         else:
             m["opm_trend"] = "stable"
             
-        # Capital Return Metrics
-        roe = f.get("returnOnEquity", f.get("roe", 0.0))
-        m["roe_vs_cost_of_capital"] = bool(roe > TH["roe_min"])
-        
+        # Capital Return Metrics.
+        # yfinance returns returnOnEquity as a fraction (0.18 = 18%) while
+        # `roe_min` is expressed in percent (15.0). Comparing them directly made
+        # the test `0.18 > 15.0` and this flag was therefore False for every
+        # stock ever analysed (audit FIX-02). Normalised to percent first.
+        roe = _normalize_roe_pct(f.get("returnOnEquity", f.get("roe")))
+        m["roe_pct"] = roe
+        m["roe_vs_cost_of_capital"] = bool(roe > TH["roe_min"]) if roe is not None else None
+
         pe = float(f.get("trailingPE", f.get("pe", 0.0)))
         m["trailing_pe"] = pe
-        sector_pe = float(f.get("sector_pe_median", 25.0))
-        m["valuation_comfort"] = float(((pe - sector_pe) / sector_pe * 100) if pe and sector_pe else pe)
+        sector_pe = f.get("sector_pe_median")
+        if pe and sector_pe:
+            m["valuation_comfort"] = float((pe - float(sector_pe)) / float(sector_pe) * 100)
+        else:
+            m["valuation_comfort"] = None
 
     elif tf == "long_term":
         inc = f.get("income_statement_5y", {})
@@ -172,11 +230,11 @@ def compute_silver_metrics(bronze: BronzePayload) -> SilverMetrics:
             
         # ROE Trend Resilience Analysis
         roe_5y = ratios.get("roe_5y", [])
-        roe_val = f.get("returnOnEquity", 0.0)
+        roe_val = _normalize_roe_pct(f.get("returnOnEquity"))
         
         if roe_5y:
             m["roe_consistency_5y"] = "consistent_moat" if min(roe_5y) > 18.0 else "average"
-        elif roe_val > 0.18 or roe_val > 18.0:
+        elif (roe_val or 0.0) > 18.0:
             m["roe_consistency_5y"] = "consistent_moat"
         else:
             m["roe_consistency_5y"] = "volatile"
