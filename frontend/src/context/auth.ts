@@ -21,6 +21,9 @@ export interface AuthContextType {
   session: Session | null;
   loading: boolean;
   profile: UserProfile | null;
+  /** The profile could not be loaded (not the same as not existing). */
+  profileError: string | null;
+  /** Resolves null only for "no profile yet" (404); throws on any failure. */
   fetchProfile: (token: string) => Promise<UserProfile | null>;
   setProfileState: (profile: UserProfile | null) => void;
   logout: () => Promise<void>;

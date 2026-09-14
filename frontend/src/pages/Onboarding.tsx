@@ -174,7 +174,13 @@ export default function Onboarding() {
       setProfileState(responseData);
       navigate('/workspace');
     } catch (err: unknown) {
-      setSubmitError(errorMessage(err, 'Something went wrong while saving the profile.'));
+      // fetch rejects with a TypeError ("Failed to fetch") when the request
+      // never reaches the server, e.g. a CORS mismatch. Say that plainly.
+      setSubmitError(
+        err instanceof TypeError
+          ? 'Could not reach the INVR server, so the profile was not saved. Your answers are still here; try again in a moment.'
+          : errorMessage(err, 'Something went wrong while saving the profile.'),
+      );
     } finally {
       setLoading(false);
     }

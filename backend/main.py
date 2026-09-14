@@ -52,6 +52,9 @@ def print_health_checks():
     logger.info("=== System Health Checks ===")
     logger.info(f"Cache writable: {cache_ok}")
     logger.info(f"Database connected: {db_ok}")
+    # A mismatch here fails every browser request with a 400 preflight and no
+    # other symptom on the server, so print exactly what is allowed (CORS-01).
+    logger.info("CORS allowed origins: %s", settings.cors_origins)
     logger.info(f"System: FinAI Orchestrator")
     logger.info("============================")
 

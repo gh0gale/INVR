@@ -84,7 +84,19 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> List[str]:
-        return [o.strip() for o in self.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
+        """Origins normalised to the form a browser sends in its Origin header.
+
+        Starlette matches the header exactly, and a browser never sends a
+        trailing slash or quotes. A value pasted from an address bar as
+        `https://invr.x.workers.dev/`, or quoted in a dashboard, therefore failed
+        every preflight with 400 on the first deploy (audit CORS-01).
+        """
+        origins = []
+        for raw in self.CORS_ALLOW_ORIGINS.split(","):
+            origin = raw.strip().strip('"').strip("'").strip().rstrip("/")
+            if origin:
+                origins.append(origin)
+        return origins
 
     @field_validator("LLM_PROVIDER", "LLM_FALLBACK_PROVIDER", "EMBEDDING_PROVIDER")
     @classmethod

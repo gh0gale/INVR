@@ -9,29 +9,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  // Set when the profile could not be loaded, as distinct from not existing.
+  const [profileError, setProfileError] = useState<string | null>(null);
   // Which user the current profile belongs to, so repeat events are ignored.
   const lastUserId = useRef<string | null>(null);
 
+  /*
+    Resolves to the profile, or null when the user genuinely has none (404).
+    Any other outcome throws and sets profileError. It used to resolve null on
+    a network failure too, and the router read that null as "new user": an
+    existing account whose request was blocked (a CORS mismatch on the first
+    deploy) was sent to onboarding, whose save then failed the same way
+    (audit FE-AUTH-01).
+  */
   const fetchProfile = async (token: string): Promise<UserProfile | null> => {
+    let response: Response;
     try {
-      const response = await fetch(apiUrl('/api/v1/profiles/'), {
+      response = await fetch(apiUrl('/api/v1/profiles/'), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       });
-      if (response.ok) {
-        const data = await response.json();
-        setProfile(data);
-        return data;
-      } else if (response.status === 404) {
-        setProfile(null);
-        return null;
-      }
     } catch (err) {
       console.error('Error fetching user profile:', err);
+      const message =
+        'Could not reach the INVR server, so your profile could not be loaded. Your account is unchanged. Try again in a moment.';
+      setProfileError(message);
+      throw new Error(message, { cause: err });
     }
-    return null;
+
+    if (response.ok) {
+      const data = await response.json();
+      setProfile(data);
+      setProfileError(null);
+      return data;
+    }
+    if (response.status === 404) {
+      setProfile(null);
+      setProfileError(null);
+      return null;
+    }
+
+    const message = `The server could not load your profile (error ${response.status}). Your account is unchanged. Try again in a moment.`;
+    setProfileError(message);
+    throw new Error(message);
   };
 
   const setProfileState = (prof: UserProfile | null) => {
@@ -62,7 +84,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(initial?.user ?? null);
       lastUserId.current = initial?.user?.id ?? null;
 
-      if (initial) await fetchProfile(initial.access_token);
+      // A failure is recorded in profileError; the routes render it.
+      if (initial) await fetchProfile(initial.access_token).catch(() => undefined);
       if (active) setLoading(false);
     };
 
@@ -80,6 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (event === 'SIGNED_OUT' || !nextSession) {
         lastUserId.current = null;
         setProfile(null);
+        setProfileError(null);
         return;
       }
 
@@ -89,7 +113,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (nextUserId === lastUserId.current) return;
 
       lastUserId.current = nextUserId;
-      void fetchProfile(nextSession.access_token);
+      void fetchProfile(nextSession.access_token).catch(() => undefined);
     });
 
     return () => {
@@ -104,10 +128,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setSession(null);
     setProfile(null);
+    setProfileError(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, profile, fetchProfile, setProfileState, logout }}>
+    <AuthContext.Provider value={{ user, session, loading, profile, profileError, fetchProfile, setProfileState, logout }}>
       {children}
     </AuthContext.Provider>
   );
