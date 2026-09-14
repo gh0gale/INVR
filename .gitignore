@@ -2,9 +2,12 @@
 # Environment configuration (secrets)
 **/.env
 
+**/.claude/**
+
 
 # Local Cache
 **/.local_cache/
+docs/**
 
 # Virtual environments
 backend/.venv/

@@ -225,7 +225,7 @@ flowchart TD
 
 - **Frontend**: React 19, TypeScript, Vite, TailwindCSS (no icon, animation, or charting library)
 - **Backend**: Python 3.12+, FastAPI, Uvicorn, Pandas, NumPy
-- **AI & Orchestration**: LangGraph, LangChain, Ollama (Local Llama 3 / Phi3)
+- **AI & Orchestration**: LangGraph, LangChain; models via Ollama locally (Llama 3.1) or Groq with Gemini failover
 - **Observability**: OpenTelemetry SDK, Arize Phoenix (`telemetry.py`)
 - **Database & Auth**: Supabase (PostgreSQL)
 
@@ -244,10 +244,9 @@ INVR/
 │   ├── config/           # Configurable thresholds (gate_thresholds.py)
 │   ├── migrations/       # SQL applied by hand (001_ledger_rls.sql)
 │   ├── scripts/          # The Engine Room, incl. the shared _grading.py rule
-│   └── tests/            # 132 unit tests, no Ollama or network required
+│   └── tests/            # 273 unit tests, no Ollama or network required
 │
 ├── frontend/             # React Vite Application
-│   ├── DESIGN_RULES.md   # Binding design constraints, read before any UI change
 │   ├── src/
 │   │   ├── components/   # Icons, skeletons, site chrome, analysis primitives
 │   │   ├── pages/        # Landing, Auth, Onboarding, Workspace, Terms, Privacy
@@ -255,7 +254,8 @@ INVR/
 │   │   └── index.css     # Design tokens and shared component classes
 │   └── package.json      # Dependencies and scripts
 │
-└── tests/                # System verifications and mathematical unit tests
+├── docs/                 # Blueprint, audits, deployment plan, evaluation tracker
+└── .claude/              # Agent rules (incl. the frontend design rules), memory, skills
 ```
 
 ## Setup & Configuration
@@ -314,16 +314,21 @@ client-side write, protecting the prediction history the grading loop depends on
 
 ### Run the test suite
 
-132 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
+273 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
 interpolation, the shared grading rule, ledger versioning and the drift
 statistics, that persisted values fit their columns, that one account's analysis
 history stays its own, that fundamental ratios are normalised to the unit their
-threshold uses, and that no configured threshold is left unread by any gate.
-None of them need Ollama, Supabase or a network connection.
+threshold uses, that no configured threshold is left unread by any gate, that
+model-provider failover reaches the fallback (including mid-stream), that rate
+limits are per account rather than per address, that no gate scores data that
+was never fetched, that the tutor's scope boundary is a rule, and that the
+figures in a narrative are checked against the engine's.
+None of them need Ollama, Supabase, an API key or a network connection.
 
 ```bash
 cd backend
-pytest tests/                        # all 132, about 3 seconds
+pytest tests/                        # all 273, about 15 seconds
+python -m scripts.data_coverage      # real market data: which gates actually ran
 pytest tests/test_gold_gates.py -v   # one file
 ```
 
@@ -356,17 +361,28 @@ workspace logs an error and the list stays empty.
 
 ### Verify the whole system end to end
 
-With the server running, Ollama up and the migrations applied:
+With the server running, a model provider available (Ollama locally, or Groq /
+Gemini keys in `.env`) and the migrations applied:
 
 ```bash
 cd backend
 python e2e_verify.py
+INVR_API_BASE=https://<app>.onrender.com python e2e_verify.py   # against a deployment
 ```
 
-It drives the live stack - real auth, real pipeline, real Supabase, real Ollama,
-real yfinance - and prints PASS or FAIL for each shipped feature with the
-evidence it used. 28 checks, all currently passing. This is the check that
-found four defects the unit suite could not see.
+It drives the live stack - real auth, real pipeline, real Supabase, the real
+model provider, real yfinance - and prints PASS or FAIL for each shipped feature
+with the evidence it used. 35 checks. This is the check that found four defects
+the unit suite could not see.
+
+What is done and what is left, phase by phase, is tracked in
+`docs/system_evaluation_prompt.md`.
+
+### Deploy
+
+The zero-cost deployment (Cloudflare Pages, Render, Supabase, Groq with Gemini
+failover) and every manual step it needs are in `docs/deployment_plan.md`. The
+backend ships as `backend/Dockerfile`, described for Render by `render.yaml`.
 
 ### Evaluate system drift
 
@@ -393,7 +409,7 @@ such as adding a gate or changing an override.
 
 1. **Deterministic Foundations** - AI is strictly used for synthesis and interaction; core financial verdicts are derived from hard, vectorized mathematics rather than opaque LLM inferences.
 2. **Self-Evaluating** - The Engine Room grades the system's own past predictions, automatically highlighting drift and closing the feedback loop on algorithmic accuracy.
-3. **Legible UI** - A trading-terminal design system: figures set in monospace so columns align, colour reserved for direction and verdict meaning, and every async surface carrying a real loading state. Motion is limited to what reports something, and each animation is documented against the fact it conveys in `frontend/DESIGN_RULES.md`.
+3. **Legible UI** - A trading-terminal design system: figures set in monospace so columns align, colour reserved for direction and verdict meaning, and every async surface carrying a real loading state. Motion is limited to what reports something, and each animation is documented against the fact it conveys in `.claude/rules/frontend.md`.
 4. **Contextually Aware** - The LangGraph-powered AI Tutor remembers your financial goals, risk profile, and the mathematical reality of the active asset being analyzed.
 
 

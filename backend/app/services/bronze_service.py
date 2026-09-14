@@ -27,18 +27,75 @@ SECTOR_PERIOD = {
     "long_term": "5y",
 }
 
-SECTOR_INDEX_MAP = {
-    "Auto": "^CNXAUTO",
-    "IT": "^CNXIT",
-    "Bank": "^NSEBANK",
-    "Financial Services": "^CNXFIN",
-    "FMCG": "^CNXFMCG"
+# Benchmarks for relative strength and the market-regime override (audit
+# DATA-03). The old map was keyed "IT", "Auto", "Bank", "FMCG" - names yfinance
+# never returns - so only "Financial Services" ever matched, and its index
+# (^CNXFIN) has a single row on Yahoo. Relative strength and the bearish
+# override therefore ran for no stock at all.
+#
+# A mapping alone is not enough either: as of 2026-09 Yahoo carries current
+# history for only a few NSE sector indices, and several others stopped
+# updating in July 2026 while still returning rows. So each candidate is used
+# only if it is fresh and long enough (`_usable`), and the NIFTY 50 is the
+# fallback - a stock measured against the broad market rather than a stale
+# sector series or nothing. Keys are yfinance's own `industry` / `sector` names.
+BROAD_MARKET_INDEX = "^NSEI"
+
+INDUSTRY_BENCHMARKS = {
+    "Banks - Regional": "^NSEBANK",
+    "Banks - Diversified": "^NSEBANK",
+    "Auto Manufacturers": "^CNXAUTO",
+    "Auto Parts": "^CNXAUTO",
 }
+
+SECTOR_BENCHMARKS = {
+    "Technology": "^CNXIT",
+    "Healthcare": "^CNXPHARMA",
+    "Financial Services": "^CNXFIN",
+    "Consumer Defensive": "^CNXFMCG",
+    "Consumer Cyclical": "^CNXCONSUM",
+    "Basic Materials": "^CNXMETAL",
+    "Energy": "^CNXENERGY",
+    "Utilities": "^CNXENERGY",
+    "Real Estate": "^CNXREALTY",
+    "Industrials": "^CNXINFRA",
+}
+
+BENCHMARK_NAMES = {
+    "^NSEI": "NIFTY 50", "^NSEBANK": "NIFTY BANK", "^CNXIT": "NIFTY IT",
+    "^CNXPHARMA": "NIFTY PHARMA", "^CNXFIN": "NIFTY FINANCIAL SERVICES",
+    "^CNXAUTO": "NIFTY AUTO", "^CNXFMCG": "NIFTY FMCG", "^CNXCONSUM": "NIFTY INDIA CONSUMPTION",
+    "^CNXMETAL": "NIFTY METAL", "^CNXENERGY": "NIFTY ENERGY", "^CNXREALTY": "NIFTY REALTY",
+    "^CNXINFRA": "NIFTY INFRASTRUCTURE",
+}
+
+# Bars the relative-strength lookback needs in Silver, per timeframe.
+BENCHMARK_MIN_ROWS = {"swing": 20, "positional": 50, "long_term": 12}
+# How far a benchmark's last bar may trail the stock's before it is stale.
+MAX_BENCHMARK_LAG_DAYS = 7
+
+
+def benchmark_candidates(fundamentals: dict | None) -> list[str]:
+    f = fundamentals or {}
+    first = INDUSTRY_BENCHMARKS.get(f.get("industry")) or SECTOR_BENCHMARKS.get(f.get("sector"))
+    return [c for c in (first, BROAD_MARKET_INDEX) if c] if first != BROAD_MARKET_INDEX else [BROAD_MARKET_INDEX]
+
+
+def _usable(benchmark_df, price_df, min_rows: int) -> bool:
+    if benchmark_df is None or len(benchmark_df) < min_rows:
+        return False
+    lag = (price_df.index[-1].date() - benchmark_df.index[-1].date()).days
+    return abs(lag) <= MAX_BENCHMARK_LAG_DAYS
+
 
 async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
     ticker = ticker if ticker.endswith(settings.MARKET_SUFFIX) else f"{ticker}{settings.MARKET_SUFFIX}"
     manifest = get_pipeline_manifest(timeframe)
-    price_df, sector_df, fundamentals, circuit = None, None, None, "none"
+    # "not_checked" when this horizon does not look at circuits, "unknown" when
+    # it does and NSE did not answer. Gold scores neither (audit DATA-01).
+    price_df, sector_df, fundamentals = None, None, None
+    circuit = "unknown" if manifest["needs_circuits"] else "not_checked"
+    benchmark_name = None
     
     # Define TTLs: 5 mins for intraday, 12 hours (43200s) for daily/longer
     ttl = 300 if timeframe == "intraday" else 43200 
@@ -60,7 +117,10 @@ async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
     
     if manifest["needs_fundamentals"]:
         async def get_funds():
-            cache_key = f"funds:{ticker}"
+            # Versioned whenever the dict's shape or units change, or the old
+            # key serves a pre-fix dict for up to 24 hours. v2: no defaulted
+            # values (DATA-02). v3: explicit-unit D/E and ROE (DATA-04).
+            cache_key = f"funds:v3:{ticker}"
             # Fundamentals change slowly, cache for 24 hours (86400s)
             data = await get_cached_dict(cache_key, 86400)
             if not data:
@@ -80,18 +140,23 @@ async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
                 if task_name == "fundamentals": fundamentals = res
                 if task_name == "circuit": circuit = res
 
-    # --- 3. Sector Data ---
-    if manifest["needs_sector"] and fundamentals:
-        sector_name = fundamentals.get("sector")
-        index_ticker = SECTOR_INDEX_MAP.get(sector_name)
-        
-        if index_ticker:
-            sector_period = SECTOR_PERIOD.get(timeframe, manifest['period'])
+    # --- 3. Benchmark (sector index, else the broad market) ---
+    if manifest["needs_sector"]:
+        sector_period = SECTOR_PERIOD.get(timeframe, manifest['period'])
+        min_rows = BENCHMARK_MIN_ROWS.get(timeframe, 20)
+        for index_ticker in benchmark_candidates(fundamentals):
             cache_key_sector = f"sector:{index_ticker}:{sector_period}:{manifest['interval']}"
-            sector_df = await get_cached_dataframe(cache_key_sector, ttl)
-            if sector_df is None:
-                sector_df = await fetch_yfinance_history(index_ticker, sector_period, manifest['interval'])
-                await set_cached_dataframe(cache_key_sector, sector_df, ttl)
+            candidate = await get_cached_dataframe(cache_key_sector, ttl)
+            if candidate is None:
+                try:
+                    candidate = await fetch_yfinance_history(index_ticker, sector_period, manifest['interval'])
+                except Exception:
+                    continue
+                await set_cached_dataframe(cache_key_sector, candidate, ttl)
+            if _usable(candidate, price_df, min_rows):
+                sector_df = candidate
+                benchmark_name = BENCHMARK_NAMES.get(index_ticker, index_ticker)
+                break
 
 
     inst_activity = None
@@ -107,5 +172,6 @@ async def build_bronze_payload(ticker: str, timeframe: str) -> BronzePayload:
         price_history=price_df,
         sector_history=sector_df,
         fundamentals=fundamentals,
-        institutional_activity=inst_activity 
+        institutional_activity=inst_activity,
+        benchmark_index=benchmark_name,
     )

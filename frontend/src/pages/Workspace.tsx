@@ -294,17 +294,20 @@ export default function Workspace() {
         return;
       }
 
-      // The verdict is written to the ledger in a background task, so the row
-      // can trail the response by a moment.
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      const { data, error } = await supabase
-        .from('algorithmic_ledger')
-        .select('*')
-        .or(`ticker.eq.${apiTicker},ticker.eq.${rawClean}`)
-        .eq('timeframe', payload.timeframe)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      // The backend writes the ledger row before it responds and returns its
+      // log_id (audit MU-04), so the exact row can be read with no wait. This
+      // replaced a fixed 3s sleep that raced a background write. The ticker
+      // lookup remains only for a response with no log_id, meaning the write
+      // failed and the latest stored run is the best available.
+      const logId = typeof resData.log_id === 'string' ? resData.log_id : null;
+      const ledger = supabase.from('algorithmic_ledger').select('*');
+      const { data, error } = await (logId
+        ? ledger.eq('log_id', logId).limit(1)
+        : ledger
+            .or(`ticker.eq.${apiTicker},ticker.eq.${rawClean}`)
+            .eq('timeframe', payload.timeframe)
+            .order('created_at', { ascending: false })
+            .limit(1));
 
       if (error) throw error;
 
@@ -324,9 +327,8 @@ export default function Workspace() {
       } else {
         appendLog({
           role: 'sys',
-          text: `Pipeline finished with verdict ${resData.verdict}. The ledger row has not appeared yet, retrying.`,
+          text: `Pipeline finished with verdict ${resData.verdict}, but the result could not be saved to your history.`,
         });
-        await new Promise((resolve) => setTimeout(resolve, 2000));
         void fetchLedger();
       }
     } catch (err: unknown) {

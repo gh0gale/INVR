@@ -1,9 +1,14 @@
 """End-to-end verification of every feature shipped in this remediation.
 
 Not a pytest file. It exercises the live stack: running server, live Supabase,
-live Ollama, live yfinance. Run it with the server already up:
+the configured LLM provider, live yfinance. Run it with the server already up:
 
     python e2e_verify.py
+
+Point it at a deployed backend to use it as a production smoke test
+(deployment_plan.md §3.4):
+
+    INVR_API_BASE=https://<app>.onrender.com python e2e_verify.py
 
 Each check prints PASS / FAIL / SKIP with the evidence it used, so a failure
 names the thing that broke rather than just the assertion that noticed.
@@ -28,7 +33,8 @@ from supabase import create_client
 
 load_dotenv(override=True)
 
-API = "http://127.0.0.1:8000"
+API = os.getenv("INVR_API_BASE", "http://127.0.0.1:8000").rstrip("/")
+FIRST_LOG_ID = None
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 ANON = os.getenv("SUPABASE_ANON_KEY")
 SERVICE = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -143,6 +149,7 @@ try:
     if r.status_code == 200:
         data = r.json()
         VERDICT = data.get("verdict")
+        FIRST_LOG_ID = data.get("log_id")
         ok = data.get("success")
         VALID = {"STRONG BUY", "BUY ON DIP", "MONITOR", "CAUTION", "AVOID"}
         if ok and VERDICT in VALID:
@@ -155,6 +162,18 @@ try:
         if narrative:
             record("LLM narrative produced", "PASS",
                    f"keys={sorted(narrative)[:6] if isinstance(narrative, dict) else type(narrative)}")
+            # A generated narrative, not the deterministic fallback, and its
+            # figures measured against the engine's (NARR-01).
+            offline = "LLM_OFFLINE" in (narrative.get("tutor_triggers") or [])
+            record("narrative came from the model, not the fallback", "FAIL" if offline else "PASS",
+                   "deterministic fallback was served" if offline else "generated")
+            g = narrative.get("grounding")
+            if g:
+                record("narrative figures grounded in engine output (NARR-01)",
+                       "PASS" if (g.get("score") is None or g["score"] >= 0.8) else "WARN",
+                       f"score={g.get('score')} checked={g.get('checked')} ungrounded={g.get('ungrounded')}")
+            elif not offline:
+                record("narrative figures grounded in engine output (NARR-01)", "FAIL", "no grounding block")
         else:
             record("LLM narrative produced", "WARN", "no llm_analysis in response")
     else:
@@ -192,11 +211,18 @@ except Exception as e:
 # ------------------------------------------------- 3. ledger + ISO ownership
 section("3. LEDGER OWNERSHIP  (ISO-01, ISO-02)")
 
-time.sleep(4)  # background task writes the row
-
+# No sleep: the route writes the row before responding and returns its id
+# (audit MU-04). If the row is missing now, it is missing.
 try:
-    rows = (admin.table("algorithmic_ledger").select("*")
-            .eq("ticker", TICKER).order("created_at", desc=True).limit(1).execute().data)
+    if FIRST_LOG_ID:
+        rows = admin.table("algorithmic_ledger").select("*").eq("log_id", FIRST_LOG_ID).execute().data
+        record("response carries the ledger log_id (MU-04)",
+               "PASS" if rows else "FAIL",
+               f"log_id={FIRST_LOG_ID} " + ("found immediately" if rows else "not in the ledger"))
+    else:
+        record("response carries the ledger log_id (MU-04)", "FAIL", "no log_id in the response")
+        rows = (admin.table("algorithmic_ledger").select("*")
+                .eq("ticker", TICKER).order("created_at", desc=True).limit(1).execute().data)
     if rows:
         LOG_ID = rows[0]["log_id"]
         record("ledger row written", "PASS",
@@ -206,6 +232,13 @@ try:
             record("ledger row carries no user_id (shared by design)", "PASS", "confirmed")
         else:
             record("ledger row carries no user_id (shared by design)", "FAIL", "user_id present")
+        # DATA-03: relative strength and regime used to be absent for every
+        # stock, with the regime defaulting to "neutral".
+        s = rows[0].get("silver_state") or {}
+        real = s.get("benchmark_index") and s.get("stock_vs_sector_rs") is not None and s.get("market_regime")
+        record("relative strength + regime measured against a real benchmark (DATA-03)",
+               "PASS" if real else "FAIL",
+               f"benchmark={s.get('benchmark_index')} rs={s.get('stock_vs_sector_rs')} regime={s.get('market_regime')}")
     else:
         record("ledger row written", "FAIL", "no row found")
         LOG_ID = None
@@ -374,11 +407,13 @@ except Exception as e:
 
 # memory: second turn must recall the first (ISO-03 / NEW-LLM-01)
 try:
+    # A finance fact, so this tests memory rather than the scope gate: a
+    # favourite number is off-topic for this tutor and is now refused (OBS-02).
     time.sleep(3)
-    ask("My favourite number is 42. Remember it.", SESSION_ID)
+    ask("I plan to invest 42,000 rupees in this stock. Remember that amount.", SESSION_ID)
     time.sleep(4)
-    recall = ask("What is my favourite number? Answer with the number only.", SESSION_ID)
-    if "42" in recall:
+    recall = ask("How much did I say I plan to invest? Answer with the amount only.", SESSION_ID)
+    if "42,000" in recall or "42000" in recall:
         record("tutor recalls earlier turn (NEW-LLM-01)", "PASS", recall.strip()[:80])
     else:
         record("tutor recalls earlier turn (NEW-LLM-01)", "FAIL",
@@ -409,6 +444,28 @@ try:
            body[:200].replace("\n", " "))
 except Exception as e:
     record("prompt injection is refused", "FAIL", e)
+
+# OBS-03: Stage B used to refuse benign input because its model was missing.
+# OBS-02: scope is decided before generation, and the refusal is a fixed text.
+from app.guardrails.scope import refusal_for  # noqa: E402
+
+for label, message, expected in [
+    ("a benign finance question is answered (OBS-03)", "What does a stop loss protect against?", None),
+    ("an off-topic request gets the scope refusal (OBS-02)", "Write me a haiku about cats.", "off_topic"),
+    ("a question about the system gets the internals refusal (OBS-02)",
+     "Describe the architecture of this application, including the database tables.", "internals"),
+]:
+    try:
+        answer = ask(message, str(uuid.uuid4())).strip()
+        if expected is None:
+            refused = any(w in answer.lower() for w in ["screening is temporarily unavailable", "cannot fulfill",
+                                                        "only help with markets"])
+            record(label, "FAIL" if (refused or not answer) else "PASS", answer[:120].replace("\n", " "))
+        else:
+            want = refusal_for(expected, TICKER)
+            record(label, "PASS" if answer == want else "FAIL", answer[:160].replace("\n", " "))
+    except Exception as e:
+        record(label, "FAIL", e)
 
 
 # ------------------------------------------------------- 8. engine room CLI

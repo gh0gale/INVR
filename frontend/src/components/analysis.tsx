@@ -206,10 +206,13 @@ export const MetricTable: React.FC<{ silver: JsonObject }> = ({ silver }) => {
   }
 
   const sectorRs = asNum(silver.stock_vs_sector_rs);
+  const benchmark = asStr(silver.benchmark_index);
   if (sectorRs != null) {
     rows.push({
       label: 'Sector RS',
-      note: 'Return minus sector index return',
+      // Stocks without a current sector index are measured against the
+      // NIFTY 50, so name whichever index was actually used.
+      note: benchmark ? `Return minus ${benchmark} return` : 'Return minus benchmark index return',
       value: sectorRs,
       format: (v) => num(v, 3),
     });

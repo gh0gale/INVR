@@ -4,21 +4,22 @@ import json
 import hashlib
 import logging
 from typing import Dict, Any, List
-from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 from opentelemetry import trace
 
 from app.schemas.state import AnalysisState
 from app.schemas.llm import AnalysisOutput
-from app.prompts import SYNTHESIS_CACHE_TTL, SYNTHESIZER_MAX_TOKENS, SYNTHESIZER_PROMPT_VERSION
+from app.prompts import SYNTHESIS_CACHE_TTL, SYNTHESIZER_PROMPT_VERSION
+from app.llm import Task, get_chat_model, message_text, model_identity, responding_model
 
 from app.services.bronze_service import build_bronze_payload
 from app.services.silver_service import compute_silver_metrics
 from app.services.gold_service import evaluate_hard_gates
 from app.services.cache_service import get_cached_dict, set_cached_dict
+from app.services.grounding_service import score_grounding
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -129,11 +130,13 @@ async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
     if state.get("errors"): return {}
     
     with tracer.start_as_current_span("llm_synthesizer_node") as span:
-        logger.info("Passing Gold payload to LOCAL Llama-3.1 Synthesizer...")
         gold = state['gold']
         user = state['user_profile']
         silver = state['silver']
-        
+        llm_model = model_identity(Task.SYNTHESIS)
+        span.set_attribute("llm.model", llm_model)
+        logger.info("Passing Gold payload to the synthesizer (%s)...", llm_model)
+
         # Audit finding P4-06. The synthesizer is the slowest node in the graph
         # (a local llama3.1 pass) and its inputs are fully deterministic: the
         # same ticker, timeframe, Gold verdict and Silver metrics always warrant
@@ -146,12 +149,17 @@ async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
         # is a correctness bug wearing a performance fix's clothing. A retry
         # carrying a correction_note skips the cache entirely, since the whole
         # point of that pass is to produce something different.
+        #
+        # The model chain is part of the key too (deployment_plan.md §1.5):
+        # switching provider must not keep serving the previous model's
+        # narrative for the rest of the TTL.
         cache_key = None
         if not state.get("correction_note"):
             cache_key = "llm_synth_" + hashlib.sha256(
                 json.dumps(
                     {
                         "prompt_version": SYNTHESIZER_PROMPT_VERSION,
+                        "model": llm_model,
                         "ticker": state["ticker"],
                         "timeframe": state["timeframe"],
                         "goal": user.get("goal"),
@@ -179,11 +187,7 @@ async def llm_synthesizer_node(state: AnalysisState) -> Dict[str, Any]:
 
         try:
             # Standard inference without structural wrapper to allow CoT reasoning
-            llm = ChatOllama(
-                model="llama3.1",
-                temperature=0.0,
-                num_predict=SYNTHESIZER_MAX_TOKENS,
-            )
+            llm = get_chat_model(Task.SYNTHESIS)
             span.set_attribute("prompt.version", SYNTHESIZER_PROMPT_VERSION)
             
             # Sanitize untrusted input to prevent prompt injection
@@ -236,9 +240,21 @@ ACTIONABLE CONDITIONS: {safe_watch}
 SILVER METRICS: {safe_silver}
 """
 
-            response = await llm.ainvoke([SystemMessage(content=sys_prompt)])
-            
-            thinking, clean_json_str = strip_thinking_block(response.content)
+            # A user turn is required, not decoration. Gemini maps a system
+            # message to its system instruction and rejects a request with no
+            # other content ("contents are required"), and Qwen's chat template
+            # refuses to render one. With only the system message, every
+            # Gemini synthesis failed and the user saw the deterministic
+            # fallback - found on the first run against hosted models.
+            response = await llm.ainvoke([
+                SystemMessage(content=sys_prompt),
+                HumanMessage(content=f"Write the tear sheet for {state['ticker']} now."),
+            ])
+            answered_by = responding_model(response)
+            if answered_by:
+                span.set_attribute("llm.responding_model", answered_by)
+
+            thinking, clean_json_str = strip_thinking_block(message_text(response))
             if thinking:
                 logger.info("LLM CoT Execution Completed. (Thinking length: %d chars)", len(thinking))
                 
@@ -299,7 +315,20 @@ def validate_synthesis_node(state: AnalysisState) -> Dict[str, Any]:
         validated_data["verdict"] = _safe_get(gold, 'verdict', 'MONITOR')
         validated_data["confidence_score"] = _safe_get(gold, 'confidence_score', 50.0)
         validated_data["regulatory_disclaimer"] = "This analysis is generated by an AI for educational purposes only. It does not constitute financial advice. Please consult a SEBI-registered investment advisor."
-        
+
+        # The verdict above is forced from Gold; the prose is not. Measure how
+        # many of its figures trace back to the engine (audit NARR-01). Stored
+        # with the narrative so it lands on the ledger row; never blocks.
+        grounding = score_grounding(validated_data, state.get("silver"), gold)
+        validated_data["grounding"] = grounding
+        span = trace.get_current_span()
+        if span and span.is_recording():
+            span.set_attribute("synthesis.grounding_score", -1.0 if grounding["score"] is None else grounding["score"])
+            span.set_attribute("synthesis.ungrounded_count", grounding["ungrounded_count"])
+        if grounding["ungrounded_count"]:
+            logger.info("Narrative cites %d figure(s) the engine did not produce: %s",
+                        grounding["ungrounded_count"], grounding["ungrounded"])
+
         logger.info("Synthesis schema validation PASSED.")
         # Clear the correction note and output the finalized dictionary
         return {"llm_output": validated_data, "correction_note": None}

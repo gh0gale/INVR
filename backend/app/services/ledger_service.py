@@ -1,4 +1,6 @@
+import asyncio
 from datetime import datetime
+from typing import Optional
 import hashlib
 import json
 import logging
@@ -23,7 +25,14 @@ GATE_THRESHOLDS produces a new fingerprint automatically. Bump RULESET_VERSION
 by hand only for logic changes that thresholds cannot express, such as adding a
 gate or changing an override.
 """
-RULESET_VERSION = "v1.1.0"
+# v1.2.0 (2026-09-13): gates no longer score absent data. The circuit gate is
+# skipped when NSE gives no band, relative strength and the regime override
+# run against a fresh benchmark, and missing fundamentals are None instead of
+# 0 / 25.0 (audit DATA-01..03). Verdicts before and after are not comparable.
+# v1.2.1 (2026-09-13): debt/equity is converted from yfinance's percentage at
+# the source. Under v1.2.0 low-debt companies (D/E 1.5-10%) were flagged as
+# 1.5-10x leveraged (audit DATA-04), so those rows are a separate cohort.
+RULESET_VERSION = "v1.2.1"
 
 _THRESHOLD_FINGERPRINT = hashlib.sha256(
     json.dumps(GATE_THRESHOLDS, sort_keys=True).encode("utf-8")
@@ -31,12 +40,18 @@ _THRESHOLD_FINGERPRINT = hashlib.sha256(
 
 PIPELINE_VERSION = f"{RULESET_VERSION}-{_THRESHOLD_FINGERPRINT}"
 
-async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdict_draft: dict, llm_output: dict = None, user_id: str = None):
+async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdict_draft: dict, llm_output: dict = None, user_id: str = None) -> Optional[str]:
     """
     Handles the Hybrid Ledger logic:
     1. Checks if the exact prediction exists today.
     2. Writes it if it doesn't.
     3. Attaches the user interaction trace.
+
+    Returns the ledger row's log_id, or None if it could not be written. The
+    analytics route awaits this before responding (audit MU-04), so the
+    Supabase client's blocking calls run in a worker thread rather than
+    stalling every other request on the event loop. `asyncio.to_thread` copies
+    the context, so the request's trace id still lands on the row.
 
     `user_id` is what makes the interaction row attributable. The ledger row
     itself stays shared and user-agnostic on purpose: it is deduplicated on
@@ -44,6 +59,12 @@ async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdic
     stored once and graded once. Ownership lives on the interaction, which is
     how the workspace scopes a user's history (audit finding ISO-01).
     """
+    return await asyncio.to_thread(
+        _write_prediction, session_id, silver_metrics, verdict_draft, llm_output, user_id
+    )
+
+
+def _write_prediction(session_id: str, silver_metrics: dict, verdict_draft: dict, llm_output: dict = None, user_id: str = None) -> Optional[str]:
     ticker = verdict_draft.get("ticker", "UNKNOWN")
     timeframe = verdict_draft.get("timeframe", "UNKNOWN")
 
@@ -54,8 +75,9 @@ async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdic
             msg = "Supabase not configured. Skipping log."
             logger.warning(msg)
             span.add_event(msg)
-            return
+            return None
 
+        log_id = None
         today_date = datetime.utcnow().date().isoformat()
 
         # Safely embed the LLM output into the gold_verdict payload so it persists
@@ -110,3 +132,7 @@ async def log_prediction_to_ledger(session_id: str, silver_metrics: dict, verdic
             span.record_exception(e)
             span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
             logger.error("Failed to sync ledger: %s", str(e))
+
+        # Set as soon as the ledger row exists, so a failure on the interaction
+        # insert still hands back the row the verdict was recorded under.
+        return log_id

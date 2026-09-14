@@ -18,13 +18,17 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
     # =========================================================
     # UNIVERSAL GATES
     # =========================================================
+    # Only a band NSE actually reported is scored. "unknown" (NSE did not
+    # answer) and "not_checked" (the horizon does not fetch it) used to fall
+    # through to PASS, so the heaviest-weighted gate passed on every run with
+    # no data behind it (audit DATA-01).
     if circuit_status == "lower":
         gates["circuit"] = "BLOCK"
         watch_list.append("Circuit limits must normalize before any entry.")
     elif circuit_status == "upper":
         gates["circuit"] = "WARN"
         watch_list.append("Wait for the stock to exit upper circuit to ensure liquidity.")
-    else:
+    elif circuit_status == "none":
         gates["circuit"] = "PASS"
 
     # Volume Validation

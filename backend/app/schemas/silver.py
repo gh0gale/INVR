@@ -9,7 +9,11 @@ class SilverMetrics(BaseModel):
     current_volume: float
 
     # --- Macro / Top-Down Filters ---
-    market_regime: Optional[str] = "neutral"  # "bullish", "bearish", "neutral"
+    # None when no benchmark had 200 bars. It used to default to "neutral", so
+    # every ledger row reported a regime that was never computed (DATA-03).
+    market_regime: Optional[str] = None  # "bullish", "bearish", "neutral"
+    # The index stock_vs_sector_rs and market_regime were measured against.
+    benchmark_index: Optional[str] = None
 
     # --- Core Technical Metrics ---
     sma_20: Optional[float] = None

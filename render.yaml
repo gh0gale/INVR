@@ -1,0 +1,52 @@
+# Render blueprint for the INVR backend. See deployment_plan.md §3.2.
+# Render -> New -> Blueprint -> pick this repo. Secrets marked `sync: false`
+# are prompted for once in the dashboard and never committed.
+services:
+  - type: web
+    name: invr-api
+    runtime: docker
+    plan: free
+    # Closest Render region to NSE users.
+    region: singapore
+    rootDir: backend
+    # Both paths are relative to the REPO ROOT, not to rootDir (Render's
+    # blueprint spec). With "./Dockerfile" and "." Render looked for a
+    # Dockerfile at the repo root, where there is none, and the first build
+    # would have failed. rootDir only scopes which changes trigger a deploy.
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    # Deploy only after the GitHub checks (tests, lockfile drift, image build)
+    # pass, so a red suite cannot reach production (deployment_plan.md §4.1).
+    autoDeployTrigger: checksPass
+    envVars:
+      # --- secrets: entered in the Render dashboard
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      # Your Cloudflare Pages URL, e.g. https://invr.pages.dev
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+      # --- configuration
+      - key: LLM_PROVIDER
+        value: groq
+      - key: LLM_FALLBACK_PROVIDER
+        value: gemini
+      - key: EMBEDDING_PROVIDER
+        value: gemini
+      - key: GUARDRAIL_MODE
+        value: block
+      - key: ROUTER_MODE
+        value: enforce
+      # One worker on the free instance (512MB). Measured on this image at idle:
+      # 124MiB with one worker, 362MiB with two - 70% of the ceiling before a
+      # single request has loaded a price frame (deployment_plan.md §2.3).
+      - key: WEB_CONCURRENCY
+        value: "1"

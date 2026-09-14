@@ -160,12 +160,49 @@ class TestCallSignature:
         sig = inspect.signature(ledger_service.log_prediction_to_ledger)
         assert sig.parameters["user_id"].default is None
 
-    def test_route_passes_user_id_to_the_background_task(self):
+    def test_route_passes_user_id_to_the_ledger_write(self):
         """Reads the route source rather than trusting the wiring by eye."""
         import app.api.routes.analytics as analytics
 
         source = inspect.getsource(analytics.process_pipeline)
-        add_task = source[source.index("background_tasks.add_task"):]
-        call = add_task[: add_task.index(")")]
+        write = source[source.index("log_prediction_to_ledger("):]
+        call = write[: write.index(")")]
         assert "user_id" in call, "the route must forward the authenticated user"
         assert call.index("llm_output") < call.index("user_id"), "argument order"
+
+
+class TestWrittenBeforeResponding:
+    """Audit MU-04. The row used to be written by a BackgroundTask after the
+    response, so a worker recycle could lose it and the frontend waited a fixed
+    three seconds hoping it had landed."""
+
+    def test_route_awaits_the_write_instead_of_backgrounding_it(self):
+        import app.api.routes.analytics as analytics
+
+        source = inspect.getsource(analytics.process_pipeline)
+        assert "await log_prediction_to_ledger(" in source
+        assert "add_task" not in source
+
+    def test_response_carries_the_log_id(self):
+        import app.api.routes.analytics as analytics
+
+        source = inspect.getsource(analytics.process_pipeline)
+        assert "log_id=log_id" in source
+
+    def test_returns_the_new_rows_log_id(self, fake_db):
+        assert asyncio.run(run_log()) == "log-1"
+
+    def test_returns_the_existing_rows_log_id_on_the_dedup_path(self, monkeypatch):
+        db = FakeSupabase(existing=[{"log_id": "log-existing"}])
+        monkeypatch.setattr(ledger_service, "supabase", db)
+        assert asyncio.run(run_log()) == "log-existing"
+
+    def test_a_failed_write_returns_none_rather_than_raising(self, monkeypatch):
+        """The analysis is still valid without its ledger row; the request must not 500."""
+
+        class Broken:
+            def table(self, name):
+                raise RuntimeError("supabase unreachable")
+
+        monkeypatch.setattr(ledger_service, "supabase", Broken())
+        assert asyncio.run(run_log()) is None

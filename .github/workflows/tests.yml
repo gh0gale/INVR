@@ -46,3 +46,36 @@ jobs:
           SUPABASE_ANON_KEY: placeholder-anon-key
           SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
         run: pytest tests/ -q
+
+  # deployment_plan.md §4.2. requirements.txt is what the Docker image installs,
+  # and it once silently fell six packages behind pyproject.toml - including
+  # slowapi and langchain-ollama, without which the server cannot start.
+  lockfile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: uv.lock matches pyproject.toml
+        run: uv lock --check
+      - name: requirements.txt matches uv.lock
+        run: |
+          uv export --format requirements-txt --no-hashes --no-dev -o requirements.txt
+          git diff --exit-code -- requirements.txt
+
+  # The image Render deploys must build and import. Catches a dependency that
+  # installs on a developer's machine but not on python:3.12-slim.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t invr-api backend
+      - name: App imports inside the image
+        run: |
+          docker run --rm \
+            -e SUPABASE_URL=https://placeholder.supabase.co \
+            -e SUPABASE_ANON_KEY=placeholder -e SUPABASE_SERVICE_ROLE_KEY=placeholder \
+            invr-api python -c "import main; print('ok')"

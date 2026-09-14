@@ -18,7 +18,7 @@ import app.pipeline.tutor_graph as tutor_graph
 
 
 class _Captured:
-    """Stands in for ChatOllama and records the prompt it was handed."""
+    """Stands in for the chat model and records the prompt it was handed."""
 
     prompt: str = ""
 
@@ -50,7 +50,7 @@ SILVER = {"rsi_14": 58.2, "atr_14": 41.3, "current_price": 2847.5}
 
 @pytest.fixture
 def synthesizer_prompt(monkeypatch) -> str:
-    monkeypatch.setattr(orchestrator, "ChatOllama", _Captured)
+    monkeypatch.setattr(orchestrator, "get_chat_model", lambda *a, **k: _Captured())
     state = {
         "ticker": "RELIANCE.NS",
         "timeframe": "swing",
@@ -65,7 +65,7 @@ def synthesizer_prompt(monkeypatch) -> str:
 
 @pytest.fixture
 def tutor_prompt(monkeypatch) -> str:
-    monkeypatch.setattr(tutor_graph, "ChatOllama", _Captured)
+    monkeypatch.setattr(tutor_graph, "get_chat_model", lambda *a, **k: _Captured())
     state = {
         "messages": [HumanMessage(content="what is ATR?")],
         "analysis_state": {

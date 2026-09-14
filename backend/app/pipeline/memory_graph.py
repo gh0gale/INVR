@@ -1,11 +1,11 @@
 import logging
-from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from opentelemetry import trace
 
-from app.prompts import MEMORY_MAX_TOKENS, MEMORY_PROMPT_VERSION
+from app.prompts import MEMORY_PROMPT_VERSION
+from app.llm import Task, get_structured_model, model_identity
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -29,14 +29,10 @@ async def extract_memory_chunk(chat_chunk: str, current_semantic_profile: Dict[s
     with tracer.start_as_current_span("extract_memory_chunk") as span:
         logger.info("Running background extraction (Unified Pass)...")
         
-        # We use a lower temp (0.0) for strict data extraction
-        llm = ChatOllama(
-            model="llama3.1",
-            temperature=0.0,
-            num_predict=MEMORY_MAX_TOKENS,
-        )
+        # Temperature 0.0 for strict data extraction (see app/llm.py TASK_SPECS)
         span.set_attribute("prompt.version", MEMORY_PROMPT_VERSION)
-        structured_llm = llm.with_structured_output(MemoryUpdate)
+        span.set_attribute("llm.model", model_identity(Task.MEMORY))
+        structured_llm = get_structured_model(Task.MEMORY, MemoryUpdate)
         
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are an efficient background memory extractor. 

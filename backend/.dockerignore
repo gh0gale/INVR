@@ -1,0 +1,14 @@
+.venv
+.local_cache
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.env
+.env.*
+!.env.example
+tests
+e2e_verify.py
+test_pipeline.py
+Dockerfile
+.dockerignore

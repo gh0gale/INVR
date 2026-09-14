@@ -23,6 +23,41 @@ def isolated_cache(tmp_path, monkeypatch):
     monkeypatch.setenv("INVR_CACHE_DIR", str(tmp_path / "cache"))
 
 
+@pytest.fixture(autouse=True)
+def local_llm_settings(monkeypatch):
+    """Pin every test to the offline Ollama provider with no failover.
+
+    `settings` reads `backend/.env`, so once a developer sets LLM_PROVIDER=groq
+    there the suite would otherwise try to build a hosted client, and a
+    missing key or a live network call would decide whether a test passes.
+    Tests that exercise provider selection override these explicitly.
+    """
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(settings, "LLM_FALLBACK_PROVIDER", "")
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "ollama")
+    monkeypatch.setattr(settings, "EMBEDDING_MODEL", "")
+    for task in ("SYNTHESIS", "TUTOR", "MEMORY", "GUARDRAIL", "SCOPE"):
+        monkeypatch.setattr(settings, f"LLM_MODEL_{task}", "")
+
+
+class _AlwaysIn:
+    async def ainvoke(self, *args, **kwargs):
+        from langchain_core.messages import AIMessage
+
+        return AIMessage(content="IN")
+
+
+@pytest.fixture(autouse=True)
+def offline_scope_classifier(monkeypatch):
+    """The tutor's scope gate asks a model about every message. No unit test
+    may reach a real one, so it answers IN unless a test says otherwise."""
+    import app.guardrails.scope as scope
+
+    monkeypatch.setattr(scope, "get_chat_model", lambda *a, **k: _AlwaysIn())
+
+
 def make_silver(**overrides) -> SilverMetrics:
     """A swing profile that passes every gate unless a test says otherwise."""
     base = dict(

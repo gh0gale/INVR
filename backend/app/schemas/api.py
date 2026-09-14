@@ -20,3 +20,6 @@ class PipelineResponse(BaseModel):
     verdict: Optional[str]
     llm_analysis: Optional[Dict[str, Any]]
     errors: Optional[list[str]]
+    # The ledger row this run was recorded under (audit MU-04). None means the
+    # write failed; the analysis itself is still valid.
+    log_id: Optional[str] = None

@@ -1,12 +1,10 @@
 import logging
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Request, Depends 
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from fastapi import APIRouter, HTTPException, Request, Depends
 from app.schemas.api import PipelineRequest, PipelineResponse
 from app.orchestrator import build_pipeline_graph
 from app.services.ledger_service import log_prediction_to_ledger
 from app.api.deps import get_current_user_id
-from app.telemetry import wrap_background_task
+from app.rate_limit import limiter
 from app.services.guardrail_service import check_input_safety
 
 from opentelemetry import trace
@@ -14,12 +12,11 @@ from opentelemetry import trace
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 router = APIRouter()
-limiter = Limiter(key_func=get_remote_address)
 pipeline_graph = build_pipeline_graph()
 
 @router.post("/process", response_model=PipelineResponse)
 @limiter.limit("10/minute")
-async def process_pipeline(request: Request, payload: PipelineRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user_id)):
+async def process_pipeline(request: Request, payload: PipelineRequest, user_id: str = Depends(get_current_user_id)):
     """
     Triggers the Medallion Data Pipeline and LangGraph orchestrator for a specific ticker.
     """
@@ -88,34 +85,38 @@ async def process_pipeline(request: Request, payload: PipelineRequest, backgroun
         elif hasattr(llm_output, "model_dump"):
             llm_output = llm_output.model_dump()
     
-        # --- 4. STAGE 8: HYBRID LEDGER LOGGING (Fire & Forget) ---
+        # --- 4. STAGE 8: HYBRID LEDGER LOGGING ---
+        # Written before responding, not as a background task (audit MU-04).
+        # A BackgroundTask dies with its worker, so a recycle between response
+        # and write lost the row the frontend then went looking for, and the
+        # frontend could only guess when it had landed (a fixed 3s sleep).
+        # Awaiting it costs one round-trip to Supabase and returns the log_id,
+        # so the client reads the exact row with no wait and no race.
+        log_id = None
         if final_state.get("silver") and final_state.get("gold"):
-            
+
             silver_data = final_state["silver"].model_dump() if hasattr(final_state["silver"], "model_dump") else final_state["silver"]
             gold_data = final_state["gold"].model_dump() if hasattr(final_state["gold"], "model_dump") else final_state["gold"]
-            
+
             session_id = getattr(payload, "session_id", "analytics-api-execution")
-    
-            # Telemetry: Wrap the background task so the Trace ID survives the thread hop
-            traced_ledger_task = wrap_background_task(log_prediction_to_ledger)
-    
+
             # user_id is passed so the interaction row is attributable. Without
             # it the workspace could not tell one account's runs from another's
             # and showed every user the same rows (audit finding ISO-01).
-            background_tasks.add_task(
-                traced_ledger_task,
+            log_id = await log_prediction_to_ledger(
                 session_id,
                 silver_data,
                 gold_data,
                 llm_output,
                 user_id
             )
-    
+
         return PipelineResponse(
             success=True,
             ticker=payload.ticker,
             timeframe=payload.timeframe,
             verdict=gold_verdict,
             llm_analysis=llm_output,
-            errors=None
+            errors=None,
+            log_id=log_id
         )

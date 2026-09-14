@@ -16,10 +16,15 @@ v1  Original prompts. Every placeholder was double-braced, so the models
 v2  2026-08-18. Braces fixed so data actually interpolates; the tutor prompt
     now pins the displayed ticker and forbids naming another company; both
     prompts ask for `**bold**` headers, which the frontend renders as typography.
+v3  2026-09-13 (tutor only). Adds SCOPE and NO SELF-DESCRIPTION directives and
+    stops pasting the full gate-threshold table into scenario answers
+    (audit OBS-02). A deterministic scope gate now runs before the tutor.
+v3  2026-09-13 (synthesiser). The instructions are followed by a short user
+    turn. Hosted models reject a system-only request; the text is unchanged.
 """
 
-SYNTHESIZER_PROMPT_VERSION = "synth-v2"
-TUTOR_PROMPT_VERSION = "tutor-v2"
+SYNTHESIZER_PROMPT_VERSION = "synth-v3"
+TUTOR_PROMPT_VERSION = "tutor-v3"
 MEMORY_PROMPT_VERSION = "memory-v1"
 GUARDRAIL_PROMPT_VERSION = "guard-v1"
 
