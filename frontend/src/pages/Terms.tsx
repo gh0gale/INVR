@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { Clause, DocumentPage } from '../components/SiteChrome';
 
@@ -7,27 +6,28 @@ import { Clause, DocumentPage } from '../components/SiteChrome';
  *
  * The clauses below describe what this codebase actually does, so they are
  * accurate rather than boilerplate. They are not a substitute for review by a
- * qualified lawyer in the operator's jurisdiction. Three facts cannot be
- * derived from the code and are marked with <Fill> so they are impossible to
- * ship by accident: the operating entity, a contact address, and the governing
- * jurisdiction.
+ * qualified lawyer. The three operator facts were supplied by the owner on
+ * 2026-09-14: operator "INVR" and contact info.ghogale@gmail.com. Governing
+ * law is set to India because the product is built around NSE, INR and SEBI;
+ * that one was inferred and should be confirmed.
  */
-const Fill: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <span className="border-b border-dashed border-down text-down">[{children}]</span>
-);
+const CONTACT = 'info.ghogale@gmail.com';
 
 export default function Terms() {
   return (
     <DocumentPage
       title="Terms of service"
-      updated="17 August 2026"
+      updated="14 September 2026"
       summary="INVR is an educational analysis tool for NSE-listed equities. Using it does not create an advisory relationship, and nothing it produces is a recommendation to buy or sell a security."
     >
       <Clause n="01" heading="Who provides this service">
         <p>
-          INVR is operated by <Fill>operating entity</Fill>. Questions about these terms can be
-          sent to <Fill>contact address</Fill>. References to "we" and "us" mean that operator,
-          and "you" means the account holder.
+          This service is operated under the name INVR. Questions about these terms can be sent
+          to{' '}
+          <a href={`mailto:${CONTACT}`} className="link">
+            {CONTACT}
+          </a>
+          . References to "we" and "us" mean that operator, and "you" means the account holder.
         </p>
       </Clause>
 
@@ -59,14 +59,10 @@ export default function Terms() {
       <Clause n="04" heading="Accuracy and availability">
         <p>
           Market data is retrieved from third-party sources and may be delayed, incomplete,
-          adjusted, or wrong. Some inputs are explicitly incomplete: institutional flow data is
-          not connected to a live source, sector price-to-earnings comparisons use a fixed
-          placeholder median, and the sector index mapping covers a limited set of sectors.
-          Current gaps are listed on the{' '}
-          <Link to="/" className="link">
-            overview page
-          </Link>
-          .
+          adjusted, or wrong. When an input is unavailable, the check that depends on it is
+          skipped rather than estimated, so a verdict can rest on fewer checks than usual. The
+          explanation accompanying a verdict is written by a language model and can contain
+          mistakes; the verdict and confidence score themselves are not model output.
         </p>
         <p>
           The service is provided on an as-is basis without warranty of accuracy, completeness,
@@ -87,7 +83,7 @@ export default function Terms() {
 
       <Clause n="06" heading="Acceptable use">
         <p>
-          Requests are rate limited per client. Do not attempt to exceed those limits, automate
+          Requests are rate limited per account. Do not attempt to exceed those limits, automate
           bulk extraction of analysis output, resell the output as a subscription or signal
           service, interfere with the operation of the service, or attempt to manipulate the
           language model into bypassing its safety instructions. Inbound messages are screened
@@ -128,8 +124,8 @@ export default function Terms() {
           version, and continued use after a change constitutes acceptance of it.
         </p>
         <p>
-          These terms are governed by the laws of <Fill>governing jurisdiction</Fill>, and
-          disputes are subject to the exclusive jurisdiction of its courts.
+          These terms are governed by the laws of India, and disputes are subject to the
+          exclusive jurisdiction of the courts of India.
         </p>
       </Clause>
     </DocumentPage>

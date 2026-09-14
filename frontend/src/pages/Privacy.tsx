@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import { Clause, DocumentPage } from '../components/SiteChrome';
 
@@ -8,11 +7,17 @@ import { Clause, DocumentPage } from '../components/SiteChrome';
  * Every category below was taken from the actual database schema and request
  * path, so this describes real behaviour rather than generic boilerplate. It
  * still needs review by a qualified lawyer, and it must be revisited whenever
- * the schema or the telemetry configuration changes. Operator-specific facts
- * are marked with <Fill>.
+ * the schema, the model providers (backend/app/llm.py) or the telemetry
+ * configuration changes. Clause 04 was rewritten on 2026-09-14 when the models
+ * moved from local Ollama to Groq and Google; it had said text never left the
+ * operator's own infrastructure.
  */
-const Fill: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <span className="border-b border-dashed border-down text-down">[{children}]</span>
+const CONTACT = 'info.ghogale@gmail.com';
+
+const ContactLink = () => (
+  <a href={`mailto:${CONTACT}`} className="link">
+    {CONTACT}
+  </a>
 );
 
 const DATA = [
@@ -52,13 +57,12 @@ export default function Privacy() {
   return (
     <DocumentPage
       title="Privacy policy"
-      updated="17 August 2026"
+      updated="14 September 2026"
       summary="INVR collects the profile it needs to run an analysis and the conversation it needs to stay useful. It never asks for brokerage credentials, holdings, PAN, or bank details, and it cannot place trades."
     >
       <Clause n="01" heading="Who controls this data">
         <p>
-          The data controller is <Fill>operating entity</Fill>. Privacy requests can be sent to{' '}
-          <Fill>contact address</Fill>.
+          The data controller is INVR. Privacy requests can be sent to <ContactLink />.
         </p>
       </Clause>
 
@@ -96,23 +100,24 @@ export default function Privacy() {
 
       <Clause n="04" heading="Language models and where text goes">
         <p>
-          Explanations, tutor replies, message summaries and intent routing are produced by
-          models running on infrastructure the operator controls, reached over a local
-          connection. Your conversation is not sent to a third-party model provider for these
-          features.
+          Explanations, tutor replies, conversation summaries, safety screening and topic
+          checks are produced by hosted language models. The text involved, meaning your tutor
+          messages, recent conversation, and the analysis being discussed, is sent to Groq, and
+          to Google (Gemini) when Groq is unavailable. Each tutor message is also sent to Google
+          to classify its topic. Your risk profile figures are included where an explanation is
+          tailored to them.
         </p>
         <p>
-          Two consequences worth stating plainly. First, message content is visible to whoever
-          administers that infrastructure. Second, if the deployment is ever reconfigured to use
-          a hosted model provider, this section stops being accurate and must be updated before
-          that change ships.
+          Those providers process the text to return a response, under their own terms and
+          privacy policies. Your email address and password are never sent to them. Do not enter
+          anything in the chat that you would not want those providers to process.
         </p>
       </Clause>
 
       <Clause n="05" heading="Diagnostic tracing">
         <p>
-          The backend emits execution traces to an observability collector for debugging and
-          quality measurement. Those traces can include the text sent to and returned from a
+          The backend can record execution traces for debugging and quality measurement. When
+          tracing is switched on, those traces can include the text sent to and returned from a
           model, along with your account identifier, the ticker analysed, and timing data. They
           are operational records, not a product feature, and access is limited to whoever
           operates the deployment.
@@ -121,10 +126,12 @@ export default function Privacy() {
 
       <Clause n="06" heading="Third parties in the request path">
         <p>
-          Supabase provides authentication and the database. Market data is retrieved from
-          public financial data sources, which receive the ticker being requested but nothing
-          about you. Web fonts are served by Google Fonts, which receives your IP address as
-          part of that request.
+          Supabase provides authentication and the database. Groq and Google provide the
+          language models described in section 04. The backend runs on Render and this website
+          is served by Cloudflare; both handle your requests and see connection details such as
+          your IP address. Market data is retrieved from public financial data sources, which
+          receive the ticker being requested but nothing about you. Web fonts are served by
+          Google Fonts, which receives your IP address as part of that request.
         </p>
       </Clause>
 
@@ -141,7 +148,7 @@ export default function Privacy() {
         <p>
           You can request a copy of your profile and conversation data, correct your profile
           from the setup flow at any time, or ask for your account and associated records to be
-          deleted. Send requests to <Fill>contact address</Fill>. Deleting your account does not
+          deleted. Send requests to <ContactLink />. Deleting your account does not
           remove analysis rows that describe a security rather than you.
         </p>
       </Clause>

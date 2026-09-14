@@ -44,14 +44,6 @@ const BENEFITS = [
   },
 ];
 
-const LIMITS = [
-  'Institutional flow (FII and DII activity) is not wired to a real source, so no verdict depends on it.',
-  'Sector price-to-earnings comparisons use a fixed placeholder median, and the sector index map covers five sectors.',
-  'Coverage is NSE equities only. Tickers are resolved with the .NS suffix.',
-  'Grading of past predictions runs on a schedule after each horizon matures, so recent calls stay unscored.',
-  'Exchange holidays are not known to the session clock, which reads regular hours only.',
-];
-
 export default function Landing() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
@@ -128,7 +120,7 @@ export default function Landing() {
 
           <p className="mt-7 max-w-2xl text-xl leading-relaxed text-fg-2">
             INVR runs a fixed quantitative pipeline over an NSE ticker and returns one of five
-            verdicts with the gate results that produced it. A local language model then
+            verdicts with the gate results that produced it. A language model then
             explains that output against your stated risk profile. It never gets a vote on the
             conclusion.
           </p>
@@ -256,27 +248,10 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* -------------------------------------------------------------- limits */}
+      {/* ------------------------------------------------------------- sign in */}
       <section>
         <div className="mx-auto max-w-6xl px-6 py-16">
-          <p className="label-accent mb-3">Stated plainly</p>
-          <h2 className="h-section">Current limitations</h2>
-          <p className="mt-4 max-w-2xl text-lg leading-relaxed text-fg-2">
-            A screening tool that hides its gaps is worse than one that has them.
-          </p>
-
-          <ul className="mt-9 max-w-3xl border-t border-rule">
-            {LIMITS.map((l) => (
-              <li
-                key={l}
-                className="border-b border-rule py-5 text-base leading-relaxed text-fg-2"
-              >
-                {l}
-              </li>
-            ))}
-          </ul>
-
-          <div className="mt-12 flex flex-wrap items-center gap-5 border-t border-rule pt-9">
+          <div className="flex flex-wrap items-center gap-5">
             <button onClick={enter} className="btn-primary btn-lg">
               {enterLabel}
             </button>

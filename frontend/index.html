@@ -9,6 +9,35 @@
       name="description"
       content="INVR runs a deterministic quantitative pipeline over NSE-listed equities and explains the result. Verdicts come from fixed arithmetic gates, not from a language model."
     />
+
+    <!--
+      Link previews (WhatsApp, Slack, X, LinkedIn, Discord). Crawlers do not run
+      JavaScript, so these must live in the static HTML, and most ignore a
+      relative image path. %VITE_SITE_URL% is replaced by Vite at build time with
+      the deployed origin (a Cloudflare build variable, no trailing slash).
+      og-image.png is a real 1200x630 screenshot of the overview page, never a
+      mockup (.claude/rules/frontend.md).
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="INVR" />
+    <meta property="og:title" content="INVR: quantitative analysis of NSE equities" />
+    <meta
+      property="og:description"
+      content="A deterministic pipeline scores NSE-listed stocks against fixed gates and explains the verdict. Educational use, not investment advice."
+    />
+    <meta property="og:url" content="%VITE_SITE_URL%/" />
+    <meta property="og:image" content="%VITE_SITE_URL%/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The INVR overview page" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="INVR: quantitative analysis of NSE equities" />
+    <meta
+      name="twitter:description"
+      content="A deterministic pipeline scores NSE-listed stocks against fixed gates and explains the verdict."
+    />
+    <meta name="twitter:image" content="%VITE_SITE_URL%/og-image.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
