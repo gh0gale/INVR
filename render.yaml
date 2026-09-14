@@ -8,11 +8,11 @@ services:
     plan: free
     # Closest Render region to NSE users.
     region: singapore
-    rootDir: backend
-    # Both paths are relative to the REPO ROOT, not to rootDir (Render's
-    # blueprint spec). With "./Dockerfile" and "." Render looked for a
-    # Dockerfile at the repo root, where there is none, and the first build
-    # would have failed. rootDir only scopes which changes trigger a deploy.
+    # No rootDir, on purpose. Render's blueprint docs say these two paths are
+    # relative to the repo root, but the first real build resolved them under
+    # rootDir ("lstat .../src/backend/backend: no such file", 2026-09-14).
+    # Without rootDir both readings agree. The cost is that a frontend-only
+    # commit also redeploys the backend, still gated by checksPass.
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /health
