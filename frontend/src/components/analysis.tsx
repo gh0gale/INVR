@@ -402,13 +402,18 @@ export const Narrative: React.FC<{ llm: JsonObject }> = ({ llm }) => {
       {watch.length > 0 && (
         <div>
           <p className="label mb-2">Conditions to watch</p>
-          <ul className="flex flex-col gap-2.5 text-base leading-relaxed text-fg-2">
+          <ol className="flex flex-col gap-2.5 text-base leading-relaxed text-fg-2">
             {watch.map((line, i) => (
-              <li key={i} className="border-l-2 border-rule-strong pl-3.5">
-                <RichText text={line.replace(/^-\s*/, '')} />
+              <li key={i} className="flex gap-3">
+                <span aria-hidden="true" className="num shrink-0 pt-[0.1em] text-sm text-fg-3">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <div className="min-w-0">
+                  <RichText text={line.replace(/^-\s*/, '')} />
+                </div>
               </li>
             ))}
-          </ul>
+          </ol>
         </div>
       )}
 

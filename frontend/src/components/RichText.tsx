@@ -84,9 +84,14 @@ export const RichText: React.FC<{ text: string; className?: string }> = ({
       <Tag key={key} className="flex flex-col gap-1.5 pl-1">
         {list.items.map((item, i) => (
           <li key={i} className="flex gap-2.5">
-            <span aria-hidden="true" className="select-none pt-[0.15em] text-fg-3">
-              {list?.ordered ? `${i + 1}.` : '–'}
-            </span>
+            {/* A hairline tick rather than a dash glyph, so no dash character reads as copy. */}
+            {list?.ordered ? (
+              <span aria-hidden="true" className="num select-none text-fg-3">
+                {i + 1}.
+              </span>
+            ) : (
+              <span aria-hidden="true" className="mt-[0.85em] h-px w-2.5 shrink-0 bg-fg-3" />
+            )}
             <span>{inline(item, `li-${key}-${i}`)}</span>
           </li>
         ))}

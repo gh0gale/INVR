@@ -7,6 +7,22 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
+const DEFAULT_TITLE = 'INVR: quantitative analysis of NSE equities';
+
+/**
+ * Names the page in the browser tab and for screen readers (WCAG 2.4.2). Every
+ * route used to share the one static "INVR" title.
+ */
+export function useDocumentTitle(title?: string | null) {
+  useEffect(() => {
+    document.title = title ? `${title} · INVR` : DEFAULT_TITLE;
+  }, [title]);
+}
+
+export const prefersReducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+
 /** True once the element has been seen. Never flips back, so figures settle. */
 export function useInView<T extends HTMLElement = HTMLDivElement>(
   rootMargin = '-12% 0px -12% 0px',

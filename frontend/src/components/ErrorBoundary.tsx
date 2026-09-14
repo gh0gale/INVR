@@ -43,9 +43,12 @@ export class ErrorBoundary extends React.Component<Props, State> {
             analyses are unaffected: nothing on this screen writes to the database.
           </p>
 
-          <p className="mt-4 border-l-2 border-down pl-4 text-sm leading-relaxed text-fg-3">
-            {this.state.error.message || 'No message was attached to the error.'}
-          </p>
+          <div className="panel-sunk mt-5 px-4 py-3">
+            <p className="label mb-1">Error message</p>
+            <p className="text-sm leading-relaxed text-fg-2">
+              {this.state.error.message || 'No message was attached to the error.'}
+            </p>
+          </div>
 
           <div className="mt-7 flex flex-wrap gap-3">
             <button

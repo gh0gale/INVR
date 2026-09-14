@@ -19,7 +19,10 @@ type TapeItem = {
 };
 
 const TapeRow: React.FC<{ items: TapeItem[]; ariaHidden: boolean }> = ({ items, ariaHidden }) => (
-  <ul className="flex shrink-0 items-center" aria-hidden={ariaHidden || undefined}>
+  <ul
+    className={`flex shrink-0 items-center ${ariaHidden ? 'tape-copy' : ''}`}
+    aria-hidden={ariaHidden || undefined}
+  >
     {items.map((item, i) => (
       <li
         key={`${item.ticker}-${i}`}
@@ -66,7 +69,7 @@ export const TickerTape: React.FC<{ rows: LedgerRow[] }> = ({ rows }) => {
         <span className="label-accent shrink-0 border-r border-rule px-4 py-2">
           Ledger tape
         </span>
-        <div className="relative flex-1 overflow-hidden">
+        <div className="tape-window relative flex-1 overflow-hidden">
           <div className="tape-track flex w-max">
             <TapeRow items={items} ariaHidden={false} />
             {/* Second copy makes the 50% translate loop seamless. */}

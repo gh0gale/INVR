@@ -5,6 +5,7 @@ import { apiUrl } from '../api';
 import { Wordmark } from '../components/SiteChrome';
 import { IconArrowLeft, IconArrowRight, IconClose, IconPlus } from '../components/Icons';
 import { errorMessage } from '../types';
+import { useDocumentTitle } from '../hooks';
 
 /**
  * Six questions, in the order the backend profile schema expects them. The
@@ -59,6 +60,7 @@ type QuestionId = (typeof QUESTIONS)[number]['id'];
 export default function Onboarding() {
   const navigate = useNavigate();
   const { session, setProfileState } = useAuth();
+  useDocumentTitle('Profile setup');
 
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -212,9 +214,8 @@ export default function Onboarding() {
         <h1 className="text-4xl font-bold leading-tight tracking-tight text-fg md:text-5xl">
           {activeQuestion.heading}
         </h1>
-        <p className="mt-4 border-l-2 border-accent pl-5 text-lg leading-relaxed text-fg-2">
-          {activeQuestion.why}
-        </p>
+        <p className="label mb-1.5 mt-6">What this changes</p>
+        <p className="text-lg leading-relaxed text-fg-2">{activeQuestion.why}</p>
 
         <div className="mt-10">
           {/* --------------------------------------------------------- choice */}
@@ -226,7 +227,9 @@ export default function Onboarding() {
                 return (
                   <label
                     key={option}
-                    className={`flex cursor-pointer items-center justify-between border-b border-rule px-4 py-4 transition-colors ${
+                    // The radio itself is visually hidden, so its keyboard focus
+                    // is drawn on the row that stands in for it.
+                    className={`flex cursor-pointer items-center justify-between border-b border-rule px-4 py-4 transition-colors has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2 has-[:focus-visible]:outline-accent ${
                       selected ? 'bg-term-850' : 'hover:bg-term-900'
                     }`}
                   >
@@ -266,7 +269,7 @@ export default function Onboarding() {
                   <tr className="border-y border-rule">
                     <th className="label py-2 text-left font-semibold">Asset class</th>
                     <th className="label w-24 py-2 text-right font-semibold">Weight</th>
-                    <th className="w-10 py-2" />
+                    <th className="w-11 py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -304,7 +307,7 @@ export default function Onboarding() {
                               };
                               setFormData((prev) => ({ ...prev, portfolio: next }));
                             }}
-                            className="control num w-16 px-2 py-2 text-right text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                            className="control num min-h-[44px] w-16 px-2 py-2 text-right text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                           />
                           <span className="text-sm text-fg-3">%</span>
                         </div>
@@ -319,7 +322,7 @@ export default function Onboarding() {
                               portfolio: prev.portfolio.filter((p) => p.id !== sector.id),
                             }))
                           }
-                          className="p-1.5 text-fg-3 transition-colors hover:text-down"
+                          className="icon-btn hover:text-down"
                         >
                           <IconClose className="h-3.5 w-3.5" />
                         </button>
@@ -354,7 +357,7 @@ export default function Onboarding() {
                       ],
                     }))
                   }
-                  className="flex items-center gap-2 text-xs font-semibold uppercase tracking-label text-fg-2 hover:text-fg"
+                  className="text-action shrink-0 gap-2 text-fg-2"
                 >
                   <IconPlus className="h-3.5 w-3.5" />
                   Add a holding

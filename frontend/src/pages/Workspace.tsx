@@ -26,6 +26,25 @@ import {
 import { asNum, asObj, asStr, asStrArray, verdictInk } from '../format';
 import { errorMessage, type LedgerRow } from '../types';
 import type { LogEntry } from '../components/TutorPanel';
+import { prefersReducedMotion, useDocumentTitle } from '../hooks';
+
+/**
+ * A failed read, said as a failure. A failed history or watchlist read used to
+ * fall through to the empty state, which told the user they had no runs.
+ */
+const LoadError: React.FC<{ what: string; message: string; onRetry: () => void }> = ({
+  what,
+  message,
+  onRetry,
+}) => (
+  <div role="alert" className="flex flex-col gap-1 p-3">
+    <p className="text-sm leading-relaxed text-down">Could not load {what}.</p>
+    <p className="text-sm leading-relaxed text-fg-3">{message}</p>
+    <button type="button" onClick={onRetry} className="text-action self-start">
+      Try again
+    </button>
+  </div>
+);
 
 // Ticker shape: alphanumerics with an optional .NS suffix, used to decide
 // whether a bare input should be treated as an analysis request.
@@ -48,7 +67,11 @@ export default function Workspace() {
 
   const [ledgerItems, setLedgerItems] = useState<LedgerRow[]>([]);
   const [ledgerLoading, setLedgerLoading] = useState(true);
+  const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [watchlistLoading, setWatchlistLoading] = useState(true);
+  const [watchlistError, setWatchlistError] = useState<string | null>(null);
   const [activeItem, setActiveItem] = useState<LedgerRow | null>(null);
+  useDocumentTitle(activeItem ? `${activeItem.ticker.split('.')[0]} analysis` : 'Workspace');
 
   const [command, setCommand] = useState('');
   const [log, setLog] = useState<LogEntry[]>([
@@ -87,8 +110,16 @@ export default function Workspace() {
   const appendLog = (entry: Omit<LogEntry, 'time'>) =>
     setLog((prev) => [...prev, { ...entry, time: getTime() }]);
 
+  // Scrolls the transcript pane only. scrollIntoView moved the whole page on
+  // mobile, dragging the reader away from a result they had just asked for.
   const scrollLog = () =>
-    setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 120);
+    setTimeout(() => {
+      const pane = logEndRef.current?.parentElement;
+      pane?.scrollTo({
+        top: pane.scrollHeight,
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+      });
+    }, 120);
 
   /*
     This user's most recent run per ticker, five tickers deep.
@@ -113,9 +144,14 @@ export default function Workspace() {
         .order('created_at', { ascending: false });
       if (error) throw error;
       setWatchlist((data ?? []).map((row) => (row as { ticker: string }).ticker));
+      setWatchlistError(null);
     } catch (err) {
-      // A failed watchlist read must not take the workspace down with it.
+      // A failed watchlist read must not take the workspace down with it, but
+      // it must not pass for an empty watchlist either.
       console.error('Could not read your watchlist:', err);
+      setWatchlistError(errorMessage(err, 'The request failed.'));
+    } finally {
+      setWatchlistLoading(false);
     }
   };
 
@@ -154,8 +190,10 @@ export default function Workspace() {
 
       setLedgerItems(deduped);
       setActiveItem((current) => current ?? deduped[0] ?? null);
+      setLedgerError(null);
     } catch (err) {
       console.error('Could not read your analysis history:', err);
+      setLedgerError(errorMessage(err, 'The request failed.'));
     } finally {
       setLedgerLoading(false);
     }
@@ -171,6 +209,9 @@ export default function Workspace() {
     setLedgerItems([]);
     setActiveItem(null);
     setLedgerLoading(true);
+    setLedgerError(null);
+    setWatchlistLoading(true);
+    setWatchlistError(null);
     void fetchLedger();
     void fetchWatchlist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -184,10 +225,21 @@ export default function Workspace() {
     the accuracy history for everyone. Writes are revoked at the database in
     migrations/001_ledger_rls.sql.
   */
-  const dismissLedgerItem = (e: React.MouseEvent, logId: string) => {
-    e.stopPropagation();
+  const dismissLedgerItem = (logId: string) => {
     setLedgerItems((prev) => prev.filter((item) => item.log_id !== logId));
     if (activeItem?.log_id === logId) setActiveItem(null);
+  };
+
+  const retryLedger = () => {
+    setLedgerLoading(true);
+    setLedgerError(null);
+    void fetchLedger();
+  };
+
+  const retryWatchlist = () => {
+    setWatchlistLoading(true);
+    setWatchlistError(null);
+    void fetchWatchlist();
   };
 
   /*
@@ -450,7 +502,9 @@ export default function Workspace() {
   const showAnalysisSkeleton = isProcessing && !activeItem;
 
   return (
-    <div className="flex h-screen flex-col bg-term-950 text-fg">
+    // Below md the workspace scrolls as one document: a fixed-height shell left
+    // the analysis a sliver above the tutor on a phone.
+    <div className="flex min-h-screen flex-col bg-term-950 text-fg md:h-screen">
       {/* ------------------------------------------------------------ top bar */}
       <header className="shrink-0 border-b border-rule bg-term-950">
         <div className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -459,7 +513,7 @@ export default function Workspace() {
             onClick={() => setIsSidebarOpen((v) => !v)}
             aria-label={isSidebarOpen ? 'Hide the history panel' : 'Show the history panel'}
             aria-pressed={isSidebarOpen}
-            className={`hidden rounded-[2px] border p-2 transition-colors lg:block ${
+            className={`hidden h-11 w-11 items-center justify-center rounded-[2px] border transition-colors lg:inline-flex ${
               isSidebarOpen
                 ? 'border-accent text-fg'
                 : 'border-rule-strong text-fg-3 hover:border-accent hover:text-fg'
@@ -522,7 +576,7 @@ export default function Workspace() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+      <div className="flex flex-1 flex-col md:min-h-0 md:flex-row">
         {/* ---------------------------------------------------------- sidebar */}
         {isSidebarOpen && (
           <aside className="hidden w-[260px] shrink-0 flex-col border-r border-rule bg-term-900 lg:flex">
@@ -530,8 +584,10 @@ export default function Workspace() {
               {(['recent', 'watchlist'] as const).map((tab) => (
                 <button
                   key={tab}
+                  type="button"
+                  aria-pressed={sidebarTab === tab}
                   onClick={() => setSidebarTab(tab)}
-                  className={`-mb-px flex-1 px-3 py-3 text-2xs font-semibold uppercase tracking-label transition-colors ${
+                  className={`-mb-px min-h-[44px] flex-1 px-3 text-2xs font-semibold uppercase tracking-label transition-colors ${
                     sidebarTab === tab
                       ? 'border-b-2 border-accent text-fg'
                       : 'border-b-2 border-transparent text-fg-3 hover:text-fg'
@@ -550,6 +606,8 @@ export default function Workspace() {
                     <SkeletonRow />
                     <SkeletonRow />
                   </>
+                ) : ledgerError && ledgerItems.length === 0 ? (
+                  <LoadError what="your recent runs" message={ledgerError} onRetry={retryLedger} />
                 ) : ledgerItems.length === 0 ? (
                   <p className="p-3 text-sm leading-relaxed text-fg-3">
                     No runs recorded yet. Analyse a ticker to start the ledger.
@@ -560,92 +618,105 @@ export default function Workspace() {
                     const watched = watchlist.includes(item.ticker);
                     const score = asNum(item.gold_verdict?.confidence_score);
                     const rowVerdict = asStr(item.gold_verdict?.verdict);
+                    // The row's select control and its actions are siblings. They
+                    // used to be buttons nested inside a role="button" div, which
+                    // is invalid and ambiguous to a screen reader.
                     return (
                       <div
                         key={item.log_id}
-                        onClick={() => setActiveItem(item)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') setActiveItem(item);
-                        }}
-                        className={`group cursor-pointer border p-3 transition-colors ${
+                        className={`flex items-stretch border transition-colors ${
                           selected
                             ? 'border-accent bg-term-850'
                             : 'border-rule hover:border-rule-strong'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-lg font-bold tracking-tight text-fg">
-                              {item.ticker.split('.')[0]}
-                            </p>
-                            <p
-                              className={`mt-0.5 truncate text-2xs font-semibold uppercase tracking-label ${verdictInk(
-                                rowVerdict,
-                              )}`}
-                            >
-                              {rowVerdict ?? 'no verdict'}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleWatch(item.ticker);
-                              }}
-                              aria-label={watched ? 'Remove from watchlist' : 'Add to watchlist'}
-                              className="p-1 text-fg-3 hover:text-fg"
-                            >
-                              {watched ? (
-                                <IconMarked className="h-3.5 w-3.5 text-fg" />
-                              ) : (
-                                <IconPlus className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                            <button
-                              onClick={(e) => dismissLedgerItem(e, item.log_id!)}
-                              aria-label={`Hide the ${item.ticker} run from this list`}
-                              title="Hide from this list. The record itself is kept for grading."
-                              className="p-1 text-fg-3 hover:text-fg"
-                            >
-                              <IconClose className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveItem(item)}
+                          aria-pressed={selected}
+                          className="min-w-0 flex-1 p-3 text-left"
+                        >
+                          <span className="block truncate text-lg font-bold tracking-tight text-fg">
+                            {item.ticker.split('.')[0]}
+                          </span>
+                          <span
+                            className={`mt-0.5 block truncate text-2xs font-semibold uppercase tracking-label ${verdictInk(
+                              rowVerdict,
+                            )}`}
+                          >
+                            {rowVerdict ?? 'no verdict'}
+                          </span>
+                          <span className="num mt-2 block text-2xs text-fg-3">
+                            {score != null ? `${(score / 10).toFixed(1)} / 10` : 'unscored'}
+                            {item.date ? ` · ${item.date}` : ''}
+                          </span>
+                        </button>
+                        {/* Always shown. Hover-only actions cannot be found on touch. */}
+                        <div className="flex shrink-0 flex-col">
+                          <button
+                            type="button"
+                            onClick={() => void toggleWatch(item.ticker)}
+                            aria-label={
+                              watched
+                                ? `Remove ${item.ticker} from the watchlist`
+                                : `Add ${item.ticker} to the watchlist`
+                            }
+                            className="icon-btn"
+                          >
+                            {watched ? (
+                              <IconMarked className="h-3.5 w-3.5 text-fg" />
+                            ) : (
+                              <IconPlus className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => dismissLedgerItem(item.log_id!)}
+                            aria-label={`Hide the ${item.ticker} run from this list`}
+                            title="Hide from this list. The record itself is kept for grading."
+                            className="icon-btn"
+                          >
+                            <IconClose className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-                        <p className="num mt-2 text-2xs text-fg-3">
-                          {score != null ? `${(score / 10).toFixed(1)} / 10` : 'unscored'}
-                          {item.date ? ` · ${item.date}` : ''}
-                        </p>
                       </div>
                     );
                   })
                 )
+              ) : watchlistLoading ? (
+                <>
+                  <SkeletonRow />
+                  <SkeletonRow />
+                </>
+              ) : watchlistError ? (
+                <LoadError what="your watchlist" message={watchlistError} onRetry={retryWatchlist} />
               ) : watchlist.length === 0 ? (
                 <p className="p-3 text-sm leading-relaxed text-fg-3">
-                  Nothing on the watchlist. Add a ticker from a recent run. The list is kept
-                  for this session only.
+                  Nothing on the watchlist. Use Watch on an analysis, or the plus mark on a
+                  recent run, to add a ticker.
                 </p>
               ) : (
                 watchlist.map((ticker) => (
                   <div
                     key={ticker}
-                    className="group flex items-center justify-between border border-rule p-3"
+                    className="flex items-center justify-between border border-rule pl-3"
                   >
                     <span className="text-base font-medium text-fg">{ticker.split('.')[0]}</span>
-                    <div className="flex gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                    <div className="flex">
                       <button
-                        onClick={() => runAnalysis(ticker)}
+                        type="button"
+                        onClick={() => void runAnalysis(ticker)}
                         disabled={isProcessing}
                         aria-label={`Analyse ${ticker}`}
-                        className="p-1 text-fg-3 hover:text-fg disabled:text-rule-strong"
+                        className="icon-btn"
                       >
                         <IconSearch className="h-3.5 w-3.5" />
                       </button>
                       <button
-                        onClick={() => toggleWatch(ticker)}
+                        type="button"
+                        onClick={() => void toggleWatch(ticker)}
                         aria-label={`Remove ${ticker} from the watchlist`}
-                        className="p-1 text-fg-3 hover:text-down"
+                        className="icon-btn hover:text-down"
                       >
                         <IconClose className="h-3.5 w-3.5" />
                       </button>
@@ -658,8 +729,44 @@ export default function Workspace() {
         )}
 
         {/* -------------------------------------------------------- main sheet */}
-        <main className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
+        <main className="no-scrollbar flex-1 md:min-h-0 md:overflow-y-auto">
           <div className="mx-auto max-w-3xl px-5 py-6">
+            {/*
+              Recent runs below lg, where the sidebar is hidden. Without this a
+              phone had no way back to an earlier analysis.
+            */}
+            {ledgerItems.length > 0 && (
+              <nav aria-label="Recent runs" className="mb-6 border-b border-rule pb-4 lg:hidden">
+                <p className="label mb-2">Recent runs</p>
+                <div className="flex flex-wrap gap-2">
+                  {ledgerItems.map((item) => {
+                    const selected = activeItem?.log_id === item.log_id;
+                    const rowVerdict = asStr(item.gold_verdict?.verdict);
+                    return (
+                      <button
+                        key={item.log_id}
+                        type="button"
+                        onClick={() => setActiveItem(item)}
+                        aria-pressed={selected}
+                        className={`inline-flex min-h-[44px] items-baseline gap-2 rounded-[2px] border px-3 py-2 transition-colors ${
+                          selected ? 'border-accent bg-term-850' : 'border-rule-strong hover:border-accent'
+                        }`}
+                      >
+                        <span className="text-sm font-bold tracking-tight text-fg">
+                          {item.ticker.split('.')[0]}
+                        </span>
+                        <span
+                          className={`text-2xs font-semibold uppercase tracking-label ${verdictInk(rowVerdict)}`}
+                        >
+                          {rowVerdict ?? 'no verdict'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </nav>
+            )}
+
             {ledgerLoading && !activeItem ? (
               <div className="flex flex-col gap-6">
                 <SkeletonLine className="h-2.5 w-32" />
@@ -691,6 +798,12 @@ export default function Workspace() {
                   panel beside this one. Results are written to the ledger and listed under
                   recent runs.
                 </p>
+                {/* The sidebar is hidden below lg, so the failure is stated here too. */}
+                {ledgerError && (
+                  <div className="-mx-3 mt-4 border-t border-rule pt-2">
+                    <LoadError what="your recent runs" message={ledgerError} onRetry={retryLedger} />
+                  </div>
+                )}
               </div>
             ) : (
               <article className="flex flex-col gap-8">
@@ -726,9 +839,12 @@ export default function Workspace() {
                 <section>
                   <VerdictHead gold={gold} ticker={activeItem.ticker} />
                   {asStr(gold.primary_reason) && (
-                    <p className="mt-5 border-l-2 border-accent pl-5 text-lg leading-relaxed text-fg-2">
-                      {asStr(gold.primary_reason)}
-                    </p>
+                    <div className="mt-6 border-t border-rule pt-4">
+                      <p className="label mb-1.5">Primary reason</p>
+                      <p className="text-lg leading-relaxed text-fg-2">
+                        {asStr(gold.primary_reason)}
+                      </p>
+                    </div>
                   )}
                 </section>
 
@@ -779,7 +895,8 @@ export default function Workspace() {
                                     `Explain ${trigger} and how it applies to ${activeItem.ticker.split('.')[0]}.`,
                                   )
                                 }
-                                className="rounded-[2px] border border-rule-strong px-2.5 py-1 text-xs text-fg-2 transition-colors hover:border-accent hover:text-fg"
+                                type="button"
+                                className="chip"
                               >
                                 {trigger}
                               </button>

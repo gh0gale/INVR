@@ -60,7 +60,8 @@ export const PipelineScroller: React.FC<{ row: LedgerRow }> = ({ row }) => {
   return (
     <div className="md:grid md:grid-cols-2 md:gap-12">
       {/* -------------------------------------------------- sticky data panel */}
-      <div className="sticky top-0 z-20 -mx-5 px-5 py-4 md:top-16 md:mx-0 md:h-[calc(100vh-8rem)] md:px-0 md:py-0">
+      {/* Offset by the sticky site header (69px) so the panel never slides under it. */}
+      <div className="sticky top-[69px] z-20 -mx-5 px-5 py-4 md:top-[76px] md:mx-0 md:h-[calc(100vh-8rem)] md:px-0 md:py-0">
         <div className="panel flex h-full max-h-[46vh] flex-col overflow-hidden bg-term-950 md:max-h-none">
           {/* Stage indicator */}
           <div className="flex shrink-0 items-center justify-between border-b border-rule px-4 py-3">
@@ -176,8 +177,8 @@ export const PipelineScroller: React.FC<{ row: LedgerRow }> = ({ row }) => {
               <span className="label">{s.role}</span>
             </div>
             <p
-              className={`mt-5 max-w-xl border-l pl-5 text-lg leading-relaxed transition-colors duration-300 ${
-                i === active ? 'border-accent text-fg-2' : 'border-rule text-fg-3'
+              className={`mt-5 max-w-xl text-lg leading-relaxed transition-colors duration-300 ${
+                i === active ? 'text-fg-2' : 'text-fg-3'
               }`}
             >
               {s.body}

@@ -4,6 +4,7 @@ import { supabase } from '../supabase';
 import { useAuth } from '../context/auth';
 import { SiteFooter, Wordmark } from '../components/SiteChrome';
 import { errorMessage } from '../types';
+import { useDocumentTitle } from '../hooks';
 
 type Mode = 'login' | 'register';
 
@@ -18,6 +19,7 @@ export default function Auth() {
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  useDocumentTitle(mode === 'login' ? 'Sign in' : 'Create an account');
 
   const routeAfterAuth = async (token: string) => {
     const profile = await fetchProfile(token);
@@ -85,7 +87,7 @@ export default function Auth() {
             <Wordmark />
             <span className="label hidden sm:inline">Portfolio analyser</span>
           </Link>
-          <Link to="/" className="text-xs font-semibold uppercase tracking-label text-fg-3 hover:text-fg">
+          <Link to="/" className="text-action">
             Back to overview
           </Link>
         </div>
@@ -121,17 +123,22 @@ export default function Auth() {
 
           {/* Right: the form. */}
           <div className="panel p-6 md:p-8">
+            {/* The left column, and its heading, is hidden below md. */}
+            <h1 className="mb-5 text-3xl font-bold tracking-tight text-fg md:hidden">
+              {mode === 'login' ? 'Sign in' : 'Create an account'}
+            </h1>
             <div className="mb-6 flex border-b border-rule">
               {(['login', 'register'] as Mode[]).map((tab) => (
                 <button
                   key={tab}
                   type="button"
+                  aria-pressed={mode === tab}
                   onClick={() => {
                     setMode(tab);
                     setError(null);
                     setNotice(null);
                   }}
-                  className={`-mb-px px-4 py-2.5 text-xs font-semibold uppercase tracking-label transition-colors ${
+                  className={`-mb-px inline-flex min-h-[44px] items-center px-4 text-xs font-semibold uppercase tracking-label transition-colors ${
                     mode === tab
                       ? 'border-b-2 border-accent text-fg'
                       : 'border-b-2 border-transparent text-fg-3 hover:text-fg'
@@ -202,7 +209,7 @@ export default function Auth() {
                   type="button"
                   onClick={handleReset}
                   disabled={busy}
-                  className="self-start text-xs font-semibold uppercase tracking-label text-fg-3 hover:text-fg disabled:text-rule-strong"
+                  className="text-action self-start"
                 >
                   {resetting ? 'Sending reset link' : 'Forgot password'}
                 </button>

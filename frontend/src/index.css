@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /*
+    One focus ring for every interactive element, shown for keyboard focus
+    only. Amber on charcoal is 8:1, and the offset keeps the ring clear of the
+    element's own border. Text fields opt out with outline-none and show focus
+    on their border instead (.control).
+  */
+  :focus-visible {
+    outline: 2px solid #e0a94a;
+    outline-offset: 2px;
+  }
+}
+
 /*
   Surface system.
 
@@ -57,9 +70,29 @@
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-[2px] px-5 py-3
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[2px] px-5 py-3
            text-2xs font-semibold uppercase tracking-label
            transition-colors disabled:cursor-not-allowed;
+  }
+
+  /*
+    Hit areas. 44px is the WCAG 2.5.5 target size. A small mark sits centred in
+    the target rather than the mark itself growing, so the ledger stays dense
+    while every control stays hittable by a thumb.
+  */
+  .icon-btn {
+    @apply inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px]
+           text-fg-3 transition-colors hover:text-fg disabled:text-rule-strong;
+  }
+
+  .text-action {
+    @apply inline-flex min-h-[44px] items-center text-xs font-semibold uppercase
+           tracking-label text-fg-3 transition-colors hover:text-fg disabled:text-rule-strong;
+  }
+
+  .chip {
+    @apply inline-flex min-h-[44px] items-center rounded-[2px] border border-rule-strong
+           px-3 text-left text-sm text-fg-2 transition-colors hover:border-accent hover:text-fg;
   }
 
   .btn-primary {
@@ -271,6 +304,18 @@
 
   .link-draw {
     transform: none !important;
+  }
+
+  /*
+    With the scroll stopped, the tape would hide whatever overflowed. It becomes
+    a strip the reader scrolls instead, and the loop's duplicate copy goes.
+  */
+  .tape-window {
+    overflow-x: auto;
+  }
+
+  .tape-copy {
+    display: none;
   }
 
   /* Magnitude bars and meters settle instantly rather than growing. */

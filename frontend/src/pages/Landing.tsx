@@ -9,7 +9,7 @@ import { PipelineScroller } from '../components/PipelineScroller';
 import { HeroEngine } from '../components/HeroEngine';
 import { Disclaimer } from '../components/analysis';
 import { AnimatedNumber } from '../components/motion';
-import { useInView } from '../hooks';
+import { useDocumentTitle, useInView } from '../hooks';
 import { useAuth } from '../context/auth';
 import type { LedgerRow } from '../types';
 
@@ -47,6 +47,7 @@ const BENEFITS = [
 export default function Landing() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
+  useDocumentTitle();
 
   // Signed-in visitors get sent straight into the product, never back to a
   // sign-in screen they have already passed.
@@ -112,7 +113,7 @@ export default function Landing() {
             </div>
           </div>
 
-          <h1 className="max-w-4xl text-5xl font-extrabold leading-[1.03] tracking-tight text-fg md:text-6xl">
+          <h1 className="max-w-4xl text-4xl font-extrabold leading-[1.03] tracking-tight text-fg sm:text-5xl md:text-6xl">
             The verdict is arithmetic.
             <br />
             <span className="text-fg-3">The explanation comes after.</span>

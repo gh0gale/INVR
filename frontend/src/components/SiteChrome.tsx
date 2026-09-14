@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MarketClock } from './MarketClock';
 import { useAuth } from '../context/auth';
+import { useDocumentTitle } from '../hooks';
 
 export const Wordmark: React.FC<{ className?: string }> = ({ className = '' }) => (
   <span className={`text-lg font-bold tracking-tight text-fg ${className}`}>
@@ -35,7 +36,9 @@ export const SiteHeader: React.FC = () => {
             <Link
               key={n.to}
               to={n.to}
-              className={`text-2xs font-semibold uppercase tracking-label transition-colors ${
+              // Below sm the wordmark is the way home and the footer carries the
+              // legal links, so the bar keeps only the account action (Hick).
+              className={`hidden min-h-[44px] items-center text-2xs font-semibold uppercase tracking-label transition-colors sm:inline-flex ${
                 pathname === n.to ? 'text-accent' : 'text-fg-3 hover:text-fg'
               }`}
             >
@@ -79,13 +82,13 @@ export const SiteFooter: React.FC = () => (
       <nav className="flex gap-5">
         <Link
           to="/terms"
-          className="text-2xs font-semibold uppercase tracking-label text-fg-3 hover:text-accent"
+          className="inline-flex min-h-[44px] items-center text-2xs font-semibold uppercase tracking-label text-fg-3 hover:text-accent"
         >
           Terms
         </Link>
         <Link
           to="/privacy"
-          className="text-2xs font-semibold uppercase tracking-label text-fg-3 hover:text-accent"
+          className="inline-flex min-h-[44px] items-center text-2xs font-semibold uppercase tracking-label text-fg-3 hover:text-accent"
         >
           Privacy
         </Link>
@@ -97,20 +100,26 @@ export const SiteFooter: React.FC = () => (
 /** Shared shell for the public, text-heavy pages. */
 export const DocumentPage: React.FC<
   React.PropsWithChildren<{ title: string; updated: string; summary: string }>
-> = ({ title, updated, summary, children }) => (
-  <div className="flex min-h-screen flex-col bg-term-950">
-    <SiteHeader />
-    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-14">
-      <p className="label mb-3">Last updated {updated}</p>
-      <h1 className="text-5xl font-semibold leading-[1.1] text-fg">{title}</h1>
-      <p className="mt-5 border-l-2 border-accent pl-5 text-lg leading-relaxed text-fg-2">
-        {summary}
-      </p>
-      <div className="mt-10 flex flex-col gap-8">{children}</div>
-    </main>
-    <SiteFooter />
-  </div>
-);
+> = ({ title, updated, summary, children }) => {
+  useDocumentTitle(title);
+  return (
+    <div className="flex min-h-screen flex-col bg-term-950">
+      <SiteHeader />
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-14">
+        <p className="label mb-3">Last updated {updated}</p>
+        <h1 className="text-4xl font-extrabold leading-[1.05] tracking-tight text-fg md:text-5xl">
+          {title}
+        </h1>
+        {/* The summary leads the page by size and a rule under it, not a stripe. */}
+        <p className="mt-6 border-b border-rule pb-8 text-xl leading-relaxed text-fg-2">
+          {summary}
+        </p>
+        <div className="mt-10 flex flex-col gap-8">{children}</div>
+      </main>
+      <SiteFooter />
+    </div>
+  );
+};
 
 export const Clause: React.FC<React.PropsWithChildren<{ n: string; heading: string }>> = ({
   n,
@@ -120,7 +129,7 @@ export const Clause: React.FC<React.PropsWithChildren<{ n: string; heading: stri
   <section>
     <h2 className="mb-3 flex items-baseline gap-3 border-b border-rule pb-2">
       <span className="num text-sm text-accent">{n}</span>
-      <span className="text-2xl font-semibold text-fg">{heading}</span>
+      <span className="text-2xl font-bold tracking-tight text-fg">{heading}</span>
     </h2>
     <div className="flex flex-col gap-4 text-base leading-relaxed text-fg-2">{children}</div>
   </section>

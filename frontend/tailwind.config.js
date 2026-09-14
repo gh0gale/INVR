@@ -4,14 +4,6 @@ export default {
   theme: {
     extend: {
       /*
-        Archivo is a grotesque with a genuine point of view and a weight range
-        that holds up at display sizes, which is what the headings needed.
-        JetBrains Mono carries every figure: it was drawn for dense numeric
-        reading, so prices and tickers stay legible small. Newsreader is kept
-        for the legal documents, a deliberately different register.
-        None of the three is Inter, Geist or Space Grotesk.
-      */
-      /*
         One family, everywhere. Archivo carries headings, body, labels and
         figures alike; a second face for numerals was reading as a mismatch
         against the ticker and verdict type. Alignment in numeric columns now
@@ -58,18 +50,25 @@ export default {
           850: '#1B1F25', // sunk panel, table stripe
           800: '#23282F', // hover, pressed
         },
+        /*
+          Contrast is measured, not eyeballed (WCAG 2.2 AA). fg-3 and down
+          were 4.2:1 on the sunk panel, under the 4.5:1 text minimum, and
+          rule-strong control borders were 2:1, under the 3:1 non-text
+          minimum. All three were lifted within their own hue on 2026-09-14.
+          Worst case now: fg-3 5.05, down 5.03, rule-strong 3.10 (term-850).
+        */
         rule: {
-          DEFAULT: '#2B323A',
-          strong: '#414A55',
+          DEFAULT: '#2B323A', // dividers only, never a control boundary
+          strong: '#626C78', // control borders, 3:1 on every ground
         },
         fg: {
           DEFAULT: '#EDEAE2', // warm off-white, never #FFF
           2: '#A8AEB6',
-          3: '#79818A',
+          3: '#878F98',
         },
         accent: '#E0A94A', // terminal amber: labels, keylines, brand
         up: '#59A878',
-        down: '#CC5F49',
+        down: '#D8705A',
         note: '#6699B8',
       },
       letterSpacing: {

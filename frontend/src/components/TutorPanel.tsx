@@ -55,7 +55,9 @@ export const TutorPanel: React.FC<{
   };
 
   return (
-    <section className="flex min-h-[26rem] shrink-0 flex-col border-t border-rule bg-term-900 md:min-h-0 md:w-[26rem] md:border-l md:border-t-0 xl:w-[30rem]">
+    // Below md the page scrolls as a document and the tutor is a fixed-height
+    // pane under the analysis, so its transcript scrolls inside itself.
+    <section className="flex h-[34rem] shrink-0 flex-col border-t border-rule bg-term-900 md:h-auto md:min-h-0 md:w-[26rem] md:border-l md:border-t-0 xl:w-[30rem]">
       <header className="shrink-0 border-b border-rule px-5 py-4">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="h-panel">Tutor</h2>
@@ -102,9 +104,7 @@ export const TutorPanel: React.FC<{
                 <p
                   className={
                     'whitespace-pre-wrap text-base leading-relaxed ' +
-                    (msg.role === 'user'
-                      ? 'border-l-2 border-rule-strong pl-3.5 text-fg-2'
-                      : 'text-fg-3')
+                    (msg.role === 'user' ? 'text-fg' : 'text-fg-3')
                   }
                 >
                   {msg.text}
@@ -135,7 +135,7 @@ export const TutorPanel: React.FC<{
                 key={q}
                 type="button"
                 onClick={() => setCommand(q)}
-                className="rounded-[2px] border border-rule-strong px-3 py-1.5 text-sm text-fg-2 transition-colors hover:border-accent hover:text-accent"
+                className="chip"
               >
                 {q}
               </button>

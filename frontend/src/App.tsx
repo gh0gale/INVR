@@ -58,7 +58,7 @@ function ProfileErrorScreen({ message }: { message: string }) {
           <button
             type="button"
             onClick={() => void logout()}
-            className="text-xs font-semibold uppercase tracking-label text-fg-3 hover:text-fg"
+            className="text-action"
           >
             Sign out
           </button>
