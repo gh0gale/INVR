@@ -380,7 +380,7 @@ What is done and what is left, phase by phase, is tracked in
 
 ### Deploy
 
-The zero-cost deployment (Cloudflare Pages, Render, Supabase, Groq with Gemini
+The zero-cost deployment (Cloudflare Workers static assets, Render, Supabase, Groq with Gemini
 failover) and every manual step it needs are in `docs/deployment_plan.md`. The
 backend ships as `backend/Dockerfile`, described for Render by `render.yaml`.
 

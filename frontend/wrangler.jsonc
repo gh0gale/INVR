@@ -1,0 +1,18 @@
+// Cloudflare deploy config for the frontend (docs/deployment_plan.md §6.3).
+//
+// The account's dashboard no longer offers a standalone Pages project, so the
+// built Vite site is served as a Worker with static assets and no Worker
+// script. `npm run build` writes ./dist; Workers Builds then runs
+// `npx -y wrangler@4 deploy` from this directory (Root directory: frontend).
+//
+// not_found_handling serves index.html for unknown paths, so a deep link such
+// as /workspace survives a refresh. VITE_* values are baked in at build time
+// and must be set as *build* variables in Workers Builds, not runtime ones.
+{
+  "name": "invr",
+  "compatibility_date": "2026-09-12",
+  "assets": {
+    "directory": "./dist/",
+    "not_found_handling": "single-page-application"
+  }
+}
