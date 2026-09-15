@@ -13,6 +13,7 @@ import { asNum, asStr, inr, verdictInk } from '../format';
 
 type TapeItem = {
   ticker: string;
+  horizon: string;
   price: number | null;
   verdict: string;
   score: number | null;
@@ -29,6 +30,7 @@ const TapeRow: React.FC<{ items: TapeItem[]; ariaHidden: boolean }> = ({ items, 
         className="flex items-center gap-3 whitespace-nowrap border-r border-rule px-5 py-2"
       >
         <span className="num text-sm font-medium text-fg">{item.ticker}</span>
+        {item.horizon && <span className="label">{item.horizon}</span>}
         {item.price != null && (
           <span className="num text-sm text-fg-2">{inr(item.price)}</span>
         )}
@@ -48,8 +50,19 @@ const TapeRow: React.FC<{ items: TapeItem[]; ariaHidden: boolean }> = ({ items, 
 );
 
 export const TickerTape: React.FC<{ rows: LedgerRow[] }> = ({ rows }) => {
-  const items: TapeItem[] = rows.map((r) => ({
+  // One entry per stock, its most recent run (rows arrive newest first). The
+  // ledger keeps a row per horizon, so the same stock used to appear twice
+  // with two different verdicts and no way to tell which call was which.
+  const seen = new Set<string>();
+  const latest = rows.filter((r) => {
+    if (seen.has(r.ticker)) return false;
+    seen.add(r.ticker);
+    return true;
+  });
+
+  const items: TapeItem[] = latest.map((r) => ({
     ticker: r.ticker.split('.')[0],
+    horizon: String(r.timeframe ?? '').replace('_', ' '),
     price: asNum(r.silver_state?.current_price),
     verdict: asStr(r.gold_verdict?.verdict) ?? 'NO VERDICT',
     score: asNum(r.gold_verdict?.confidence_score),
