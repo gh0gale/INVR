@@ -244,7 +244,7 @@ INVR/
 │   ├── config/           # Configurable thresholds (gate_thresholds.py)
 │   ├── migrations/       # SQL applied by hand (001_ledger_rls.sql)
 │   ├── scripts/          # The Engine Room, incl. the shared _grading.py rule
-│   └── tests/            # 273 unit tests, no Ollama or network required
+│   └── tests/            # 280 unit tests, no Ollama or network required
 │
 ├── frontend/             # React Vite Application
 │   ├── src/
@@ -314,7 +314,7 @@ client-side write, protecting the prediction history the grading loop depends on
 
 ### Run the test suite
 
-273 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
+280 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
 interpolation, the shared grading rule, ledger versioning and the drift
 statistics, that persisted values fit their columns, that one account's analysis
 history stays its own, that fundamental ratios are normalised to the unit their
@@ -327,7 +327,7 @@ None of them need Ollama, Supabase, an API key or a network connection.
 
 ```bash
 cd backend
-pytest tests/                        # all 273, about 15 seconds
+pytest tests/                        # all 280, about 15 seconds
 python -m scripts.data_coverage      # real market data: which gates actually ran
 pytest tests/test_gold_gates.py -v   # one file
 ```
