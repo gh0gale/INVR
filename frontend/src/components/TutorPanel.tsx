@@ -1,13 +1,19 @@
 /**
- * Tutor panel: transcript plus composer.
+ * Tutor drawer: transcript plus composer, over the analysis.
+ *
+ * It is opened from the workspace and closed by Escape, the close control or a
+ * click on the analysis behind it. It is not a permanent column: as one it took
+ * a quarter of a laptop and a 34rem slab of a phone whether or not anyone was
+ * asking anything.
  *
  * The composer is a real editor rather than a bare text box. It states what it
  * accepts, shows the submit keys, grows with the message, disables its own
  * send button when there is nothing to send, and says plainly which analysis
  * is in context so an answer is never mistaken for a general one.
  */
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { SkeletonLine } from './Skeleton';
+import { IconClose } from './Icons';
 import { RichText } from './RichText';
 import type { LedgerRow } from '../types';
 
@@ -22,6 +28,7 @@ export const TutorPanel: React.FC<{
   isStreaming: boolean;
   activeItem: LedgerRow | null;
   logEndRef: React.RefObject<HTMLDivElement | null>;
+  onClose: () => void;
 }> = ({
   log,
   command,
@@ -31,9 +38,21 @@ export const TutorPanel: React.FC<{
   isStreaming,
   activeItem,
   logEndRef,
+  onClose,
 }) => {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const hasConversation = log.some((m) => m.role === 'user');
+
+  // The drawer mounts when it opens, so mounting is the moment to take focus
+  // and to start listening for Escape.
+  useEffect(() => {
+    composerRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   // Real questions the tutor can answer from the loaded context. Shown only
   // until the first message, so they prompt rather than clutter.
@@ -55,14 +74,33 @@ export const TutorPanel: React.FC<{
   };
 
   return (
-    // Below lg the page scrolls as a document and the tutor is a fixed-height
-    // pane under the analysis, so its transcript scrolls inside itself. The
-    // split starts at lg: at md it left the analysis about 350px wide.
-    <section className="flex h-[34rem] shrink-0 flex-col border-t border-rule bg-term-900 lg:h-auto lg:min-h-0 lg:w-[24rem] lg:border-l lg:border-t-0 xl:w-[30rem]">
+    <>
+      {/*
+        A click on the analysis behind the drawer closes it. There is no scrim:
+        the surface system has no translucent layers, and the drawer's own
+        border is what separates it from the page.
+      */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close the tutor"
+        className="fixed inset-0 z-40 cursor-default"
+      />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="Tutor"
+        className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-rule bg-term-900 sm:w-[28rem]"
+      >
       <header className="shrink-0 border-b border-rule px-5 py-4">
-        <div className="flex items-baseline justify-between gap-4">
+        <div className="flex items-center justify-between gap-4">
           <h2 className="h-panel">Tutor</h2>
-          <span className="label">{isProcessing ? 'Working' : 'Ready'}</span>
+          <div className="flex items-center gap-3">
+            <span className="label">{isProcessing ? 'Working' : 'Ready'}</span>
+            <button type="button" onClick={onClose} aria-label="Close the tutor" className="icon-btn">
+              <IconClose className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
         <p className="mt-1.5 text-sm text-fg-3">
           {activeItem
@@ -180,14 +218,15 @@ export const TutorPanel: React.FC<{
           />
 
           <div className="flex items-center justify-between gap-3 border-t border-rule pt-2.5">
-            <p className="text-2xs text-fg-3">
+            {/* The key hint is for a keyboard. On a phone it only took room. */}
+            <p className="hidden text-2xs text-fg-3 sm:block">
               <span className="kbd">Enter</span> sends, <span className="kbd">Shift</span> +{' '}
               <span className="kbd">Enter</span> adds a line
             </p>
             <button
               type="submit"
               disabled={isProcessing || !command.trim()}
-              className="btn-primary shrink-0"
+              className="btn-primary ml-auto shrink-0"
             >
               Send
             </button>
@@ -199,6 +238,7 @@ export const TutorPanel: React.FC<{
           pipeline instead of asking the tutor.
         </p>
       </form>
-    </section>
+      </aside>
+    </>
   );
 };

@@ -56,6 +56,10 @@ export default function Workspace() {
   const { session, profile, logout } = useAuth();
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // The tutor is a drawer over the analysis, closed until it is asked for, on
+  // every size. As a permanent column it left the analysis too narrow on a
+  // laptop and a 34rem slab of chat under it on a phone.
+  const [isTutorOpen, setIsTutorOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'recent' | 'watchlist'>('recent');
 
   // Persisted per account in the `watchlists` table (migration 004). It used to
@@ -543,9 +547,13 @@ export default function Workspace() {
             <label htmlFor="ticker-input" className="sr-only">
               NSE ticker to analyse
             </label>
-            {/* The padding sits on the input, not the box, so the whole
-                control is a 44px tap target rather than a 27px line of text. */}
-            <div className="control flex min-w-0 flex-1 items-center gap-2.5 px-3.5">
+            {/*
+              Analyse sits inside the field, so the row carries two things, the
+              search and the account action, and the search gets the rest of the
+              width. The padding is on the input, not the box, so the whole
+              control is a tap target rather than a 27px line of text.
+            */}
+            <div className="control flex min-w-0 flex-1 items-center gap-2.5 pl-3.5">
               <IconSearch className="h-4 w-4 shrink-0 text-fg-3" />
               <input
                 id="ticker-input"
@@ -559,15 +567,14 @@ export default function Workspace() {
                 className="w-full min-w-0 bg-transparent py-3 text-base outline-none placeholder:text-fg-3 disabled:opacity-60"
               />
               <span className="kbd hidden shrink-0 sm:inline">Enter</span>
+              <button
+                type="submit"
+                disabled={isProcessing}
+                className="btn-primary m-1 shrink-0 px-3.5 sm:px-5"
+              >
+                {isProcessing ? 'Running' : 'Analyse'}
+              </button>
             </div>
-            {/* Narrower padding on a phone: three controls share the row. */}
-            <button
-              type="submit"
-              disabled={isProcessing}
-              className="btn-primary shrink-0 px-3.5 sm:px-5"
-            >
-              {isProcessing ? 'Running' : 'Analyse'}
-            </button>
           </form>
 
           <div className="ml-auto flex shrink-0 items-center gap-4">
@@ -740,7 +747,8 @@ export default function Workspace() {
 
         {/* -------------------------------------------------------- main sheet */}
         <main className="no-scrollbar flex-1 lg:min-h-0 lg:overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-5 py-6">
+          {/* Bottom room for the tutor launcher, which floats over the sheet. */}
+          <div className="mx-auto max-w-3xl px-5 pb-24 pt-6">
             {/*
               Recent runs below lg, where the sidebar is hidden. Without this a
               phone had no way back to an earlier analysis.
@@ -785,7 +793,7 @@ export default function Workspace() {
               <div className="flex flex-col gap-6">
                 <SkeletonLine className="h-2.5 w-32" />
                 <SkeletonLine className="h-9 w-64" />
-                <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+                <div className="grid gap-8 md:grid-cols-2">
                   <SkeletonBlock lines={7} />
                   <SkeletonBlock lines={7} />
                 </div>
@@ -862,14 +870,7 @@ export default function Workspace() {
                   )}
                 </section>
 
-                {/*
-                  Two columns only where the sheet is actually wide: between md
-                  and lg it has the whole window, and from 2xl it has enough left
-                  over after the sidebar and the tutor. From lg to 2xl the sheet
-                  is 360 to 640px, where two columns broke the metric notes one
-                  word per line and cut the price ladder off.
-                */}
-                <div className="grid gap-x-10 gap-y-8 md:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+                <div className="grid gap-x-10 gap-y-8 md:grid-cols-2">
                   <section>
                     <h2 className="label mb-3 border-b border-rule pb-2">Silver metrics</h2>
                     <MetricTable silver={silver} />
@@ -911,11 +912,12 @@ export default function Workspace() {
                             {asStrArray(narrative.tutor_triggers).map((trigger, i) => (
                               <button
                                 key={i}
-                                onClick={() =>
+                                onClick={() => {
                                   setCommand(
                                     `Explain ${trigger} and how it applies to ${activeItem.ticker.split('.')[0]}.`,
-                                  )
-                                }
+                                  );
+                                  setIsTutorOpen(true);
+                                }}
                                 type="button"
                                 className="chip"
                               >
@@ -936,16 +938,34 @@ export default function Workspace() {
           </div>
         </main>
 
-        <TutorPanel
-          log={log}
-          command={command}
-          setCommand={setCommand}
-          onSubmit={handleCommand}
-          isProcessing={isProcessing}
-          isStreaming={isStreaming}
-          activeItem={activeItem}
-          logEndRef={logEndRef}
-        />
+        {/*
+          The launcher states what the tutor is doing while it is shut, so a
+          stream that finished behind the drawer is not silent.
+        */}
+        {!isTutorOpen && (
+          <button
+            type="button"
+            onClick={() => setIsTutorOpen(true)}
+            aria-expanded={false}
+            className="btn-primary fixed bottom-4 right-4 z-30"
+          >
+            {isProcessing ? 'Tutor working' : 'Ask the tutor'}
+          </button>
+        )}
+
+        {isTutorOpen && (
+          <TutorPanel
+            log={log}
+            command={command}
+            setCommand={setCommand}
+            onSubmit={handleCommand}
+            isProcessing={isProcessing}
+            isStreaming={isStreaming}
+            activeItem={activeItem}
+            logEndRef={logEndRef}
+            onClose={() => setIsTutorOpen(false)}
+          />
+        )}
       </div>
     </div>
   );
