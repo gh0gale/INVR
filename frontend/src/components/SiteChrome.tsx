@@ -54,7 +54,8 @@ export const SiteHeader: React.FC = () => {
               <Link to={profile ? '/workspace' : '/onboarding'} className="btn-primary">
                 {profile ? 'Workspace' : 'Finish setup'}
               </Link>
-              <button type="button" onClick={logout} className="btn-quiet">
+              {/* Below sm the bar keeps one account action; two overflowed a phone. */}
+              <button type="button" onClick={logout} className="btn-quiet hidden sm:inline-flex">
                 Sign out
               </button>
             </>

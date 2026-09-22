@@ -55,9 +55,10 @@ export const TutorPanel: React.FC<{
   };
 
   return (
-    // Below md the page scrolls as a document and the tutor is a fixed-height
-    // pane under the analysis, so its transcript scrolls inside itself.
-    <section className="flex h-[34rem] shrink-0 flex-col border-t border-rule bg-term-900 md:h-auto md:min-h-0 md:w-[26rem] md:border-l md:border-t-0 xl:w-[30rem]">
+    // Below lg the page scrolls as a document and the tutor is a fixed-height
+    // pane under the analysis, so its transcript scrolls inside itself. The
+    // split starts at lg: at md it left the analysis about 350px wide.
+    <section className="flex h-[34rem] shrink-0 flex-col border-t border-rule bg-term-900 lg:h-auto lg:min-h-0 lg:w-[24rem] lg:border-l lg:border-t-0 xl:w-[30rem]">
       <header className="shrink-0 border-b border-rule px-5 py-4">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="h-panel">Tutor</h2>

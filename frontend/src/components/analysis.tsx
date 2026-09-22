@@ -83,12 +83,15 @@ export const PriceLadder: React.FC<{
   const scale = Math.max(...deltas.map(Math.abs), 0.01);
 
   return (
-    <table className="w-full border-collapse text-base">
+    // Four columns need about 18rem. Narrower than that, on a small phone, the
+    // table scrolls rather than breaking every label onto two lines.
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[18rem] border-collapse text-base">
       <thead>
         <tr className="border-b border-rule text-left">
           <th className="label py-1.5 font-medium">Level</th>
           <th className="label py-1.5 text-right font-medium">Price</th>
-          <th className="label w-24 py-1.5 font-medium">Distance</th>
+          <th className="label w-16 py-1.5 pl-2 font-medium sm:w-24">Distance</th>
           <th className="label py-1.5 text-right font-medium">%</th>
         </tr>
       </thead>
@@ -103,11 +106,15 @@ export const PriceLadder: React.FC<{
               } ${inView ? 'stamp-in' : 'opacity-0'}`}
               style={inView ? { animationDelay: `${i * 45}ms` } : undefined}
             >
-              <td className={`py-1.5 ${l.ink} ${l.isPrice ? 'font-medium' : ''}`}>{l.label}</td>
+              <td
+                className={`whitespace-nowrap py-1.5 ${l.ink} ${l.isPrice ? 'font-medium' : ''}`}
+              >
+                {l.label}
+              </td>
               <td className={`num py-1.5 pr-3 text-right ${l.ink} ${l.isPrice ? 'font-medium' : ''}`}>
                 {inr(l.value)}
               </td>
-              <td className="py-1.5 pr-3">
+              <td className="py-1.5 pl-2 pr-3">
                 {!l.isPrice && <DeltaBar pct={delta} scale={scale} active={inView} />}
               </td>
               <td className="num py-1.5 text-right">
@@ -128,7 +135,8 @@ export const PriceLadder: React.FC<{
           );
         })}
       </tbody>
-    </table>
+      </table>
+    </div>
   );
 };
 
@@ -285,7 +293,8 @@ export const TradeSetup: React.FC<{ setup: JsonObject }> = ({ setup }) => {
   return (
     <div ref={ref} className="panel-sunk p-4">
       <p className="label-accent mb-3">Trade setup</p>
-      <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-base">
+      {/* One column below sm: an entry band and two targets do not fit in half a phone. */}
+      <div className="grid gap-x-6 gap-y-4 text-base sm:grid-cols-2">
         <div>
           <span className="label block">Entry zone</span>
           <span className="num text-fg">

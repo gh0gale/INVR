@@ -502,9 +502,10 @@ export default function Workspace() {
   const showAnalysisSkeleton = isProcessing && !activeItem;
 
   return (
-    // Below md the workspace scrolls as one document: a fixed-height shell left
-    // the analysis a sliver above the tutor on a phone.
-    <div className="flex min-h-screen flex-col bg-term-950 text-fg md:h-screen">
+    // Below lg the workspace scrolls as one document: a fixed-height shell left
+    // the analysis a sliver above the tutor on a phone, and a two-pane split on
+    // a tablet left the analysis about 350px wide.
+    <div className="flex min-h-screen flex-col bg-term-950 text-fg lg:h-screen">
       {/* ------------------------------------------------------------ top bar */}
       <header className="shrink-0 border-b border-rule bg-term-950">
         <div className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -535,7 +536,9 @@ export default function Workspace() {
                 await runAnalysis(q);
               }
             }}
-            className="order-last flex w-full min-w-0 flex-1 items-center gap-2 sm:order-none sm:w-auto sm:max-w-xl"
+            // basis-full, not flex-1, below sm: flex-1 sets a 0% basis, so the
+            // field did not wrap onto its own row and collapsed to the icon.
+            className="order-last flex w-full min-w-0 basis-full items-center gap-2 sm:order-none sm:w-auto sm:max-w-xl sm:flex-1 sm:basis-auto"
           >
             <label htmlFor="ticker-input" className="sr-only">
               NSE ticker to analyse
@@ -576,7 +579,7 @@ export default function Workspace() {
         </div>
       </header>
 
-      <div className="flex flex-1 flex-col md:min-h-0 md:flex-row">
+      <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         {/* ---------------------------------------------------------- sidebar */}
         {isSidebarOpen && (
           <aside className="hidden w-[260px] shrink-0 flex-col border-r border-rule bg-term-900 lg:flex">
@@ -729,7 +732,7 @@ export default function Workspace() {
         )}
 
         {/* -------------------------------------------------------- main sheet */}
-        <main className="no-scrollbar flex-1 md:min-h-0 md:overflow-y-auto">
+        <main className="no-scrollbar flex-1 lg:min-h-0 lg:overflow-y-auto">
           <div className="mx-auto max-w-3xl px-5 py-6">
             {/*
               Recent runs below lg, where the sidebar is hidden. Without this a
@@ -771,7 +774,7 @@ export default function Workspace() {
               <div className="flex flex-col gap-6">
                 <SkeletonLine className="h-2.5 w-32" />
                 <SkeletonLine className="h-9 w-64" />
-                <div className="grid gap-8 md:grid-cols-2">
+                <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
                   <SkeletonBlock lines={7} />
                   <SkeletonBlock lines={7} />
                 </div>
@@ -848,7 +851,14 @@ export default function Workspace() {
                   )}
                 </section>
 
-                <div className="grid gap-x-10 gap-y-8 md:grid-cols-2">
+                {/*
+                  Two columns only where the sheet is actually wide: between md
+                  and lg it has the whole window, and from 2xl it has enough left
+                  over after the sidebar and the tutor. From lg to 2xl the sheet
+                  is 360 to 640px, where two columns broke the metric notes one
+                  word per line and cut the price ladder off.
+                */}
+                <div className="grid gap-x-10 gap-y-8 md:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
                   <section>
                     <h2 className="label mb-3 border-b border-rule pb-2">Silver metrics</h2>
                     <MetricTable silver={silver} />
