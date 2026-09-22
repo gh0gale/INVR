@@ -5,7 +5,7 @@ import { useAuth } from '../context/auth';
 import { useDocumentTitle } from '../hooks';
 
 export const Wordmark: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <span className={`text-lg font-bold tracking-tight text-fg ${className}`}>
+  <span className={`inline-flex min-h-[44px] items-center text-lg font-bold tracking-tight text-fg ${className}`}>
     INVR<span className="text-accent">.</span>
   </span>
 );

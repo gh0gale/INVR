@@ -523,7 +523,9 @@ export default function Workspace() {
             <IconPanel className="h-4 w-4" />
           </button>
 
-          <Link to="/" className="flex items-baseline gap-2">
+          {/* Below sm the wordmark takes the whole first row, which leaves the
+              field, Analyse and Sign out on one line under it. */}
+          <Link to="/" className="flex basis-full items-baseline gap-2 sm:basis-auto">
             <Wordmark />
           </Link>
 
@@ -536,14 +538,14 @@ export default function Workspace() {
                 await runAnalysis(q);
               }
             }}
-            // basis-full, not flex-1, below sm: flex-1 sets a 0% basis, so the
-            // field did not wrap onto its own row and collapsed to the icon.
-            className="order-last flex w-full min-w-0 basis-full items-center gap-2 sm:order-none sm:w-auto sm:max-w-xl sm:flex-1 sm:basis-auto"
+            className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-xl"
           >
             <label htmlFor="ticker-input" className="sr-only">
               NSE ticker to analyse
             </label>
-            <div className="control flex min-w-0 flex-1 items-center gap-2.5 px-3.5 py-2.5">
+            {/* The padding sits on the input, not the box, so the whole
+                control is a 44px tap target rather than a 27px line of text. */}
+            <div className="control flex min-w-0 flex-1 items-center gap-2.5 px-3.5">
               <IconSearch className="h-4 w-4 shrink-0 text-fg-3" />
               <input
                 id="ticker-input"
@@ -554,16 +556,21 @@ export default function Workspace() {
                 disabled={isProcessing}
                 autoComplete="off"
                 spellCheck={false}
-                className="w-full min-w-0 bg-transparent text-base outline-none placeholder:text-fg-3 disabled:opacity-60"
+                className="w-full min-w-0 bg-transparent py-3 text-base outline-none placeholder:text-fg-3 disabled:opacity-60"
               />
               <span className="kbd hidden shrink-0 sm:inline">Enter</span>
             </div>
-            <button type="submit" disabled={isProcessing} className="btn-primary shrink-0">
+            {/* Narrower padding on a phone: three controls share the row. */}
+            <button
+              type="submit"
+              disabled={isProcessing}
+              className="btn-primary shrink-0 px-3.5 sm:px-5"
+            >
               {isProcessing ? 'Running' : 'Analyse'}
             </button>
           </form>
 
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex shrink-0 items-center gap-4">
             <div className="hidden lg:block">
               <MarketClock compact />
             </div>
@@ -572,7 +579,7 @@ export default function Workspace() {
                 {String(profile.timeframe).replace('_', ' ')} horizon
               </p>
             )}
-            <button onClick={logout} className="btn-quiet">
+            <button onClick={logout} className="btn-quiet px-3.5 sm:px-5">
               Sign out
             </button>
           </div>
@@ -739,9 +746,13 @@ export default function Workspace() {
               phone had no way back to an earlier analysis.
             */}
             {ledgerItems.length > 0 && (
-              <nav aria-label="Recent runs" className="mb-6 border-b border-rule pb-4 lg:hidden">
+              <nav aria-label="Recent runs" className="mb-5 border-b border-rule pb-3 lg:hidden">
                 <p className="label mb-2">Recent runs</p>
-                <div className="flex flex-wrap gap-2">
+                {/*
+                  One scrolling row, not a wrapping block: five runs wrapped to
+                  three rows and pushed the analysis itself below the fold.
+                */}
+                <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5">
                   {ledgerItems.map((item) => {
                     const selected = activeItem?.log_id === item.log_id;
                     const rowVerdict = asStr(item.gold_verdict?.verdict);
@@ -751,7 +762,7 @@ export default function Workspace() {
                         type="button"
                         onClick={() => setActiveItem(item)}
                         aria-pressed={selected}
-                        className={`inline-flex min-h-[44px] items-baseline gap-2 rounded-[2px] border px-3 py-2 transition-colors ${
+                        className={`inline-flex min-h-[44px] shrink-0 items-baseline gap-2 whitespace-nowrap rounded-[2px] border px-3 py-2 transition-colors ${
                           selected ? 'border-accent bg-term-850' : 'border-rule-strong hover:border-accent'
                         }`}
                       >
