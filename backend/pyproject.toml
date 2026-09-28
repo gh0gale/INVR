@@ -25,3 +25,7 @@ dependencies = [
     "uvicorn>=0.49.0",
     "yfinance>=1.4.1",
 ]
+
+[tool.pytest.ini_options]
+# `app` imports from backend/, so plain `pytest` (CI) needs it on the path.
+pythonpath = ["."]
