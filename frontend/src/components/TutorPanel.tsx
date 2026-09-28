@@ -1,10 +1,13 @@
 /**
- * Tutor drawer: transcript plus composer, over the analysis.
+ * Tutor drawer: transcript plus composer.
  *
- * It is opened from the workspace and closed by Escape, the close control or a
- * click on the analysis behind it. It is not a permanent column: as one it took
- * a quarter of a laptop and a 34rem slab of a phone whether or not anyone was
- * asking anything.
+ * Closed until someone asks for it, at every size: it was a permanent column
+ * once and took a quarter of a laptop whether or not anyone was asking
+ * anything. Once open it depends on the width. From lg it is `docked`: an
+ * in-flow column the workspace makes room for, so the result and the
+ * conversation are read side by side and nothing is covered. Below lg it is
+ * an overlay drawer, closed by Escape, its close control or a click on the
+ * analysis behind it, because two columns on a phone squeeze both.
  *
  * The composer is a real editor rather than a bare text box. It states what it
  * accepts, shows the submit keys, grows with the message, disables its own
@@ -29,6 +32,10 @@ export const TutorPanel: React.FC<{
   activeItem: LedgerRow | null;
   logEndRef: React.RefObject<HTMLDivElement | null>;
   onClose: () => void;
+  docked: boolean;
+  /** Whether a successful run opens the tutor (docked layouts only). */
+  autoOpen: boolean;
+  onAutoOpenChange: (on: boolean) => void;
 }> = ({
   log,
   command,
@@ -39,6 +46,9 @@ export const TutorPanel: React.FC<{
   activeItem,
   logEndRef,
   onClose,
+  docked,
+  autoOpen,
+  onAutoOpenChange,
 }) => {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const hasConversation = log.some((m) => m.role === 'user');
@@ -80,17 +90,23 @@ export const TutorPanel: React.FC<{
         the surface system has no translucent layers, and the drawer's own
         border is what separates it from the page.
       */}
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close the tutor"
-        className="fixed inset-0 z-40 cursor-default"
-      />
+      {!docked && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close the tutor"
+          className="fixed inset-0 z-40 cursor-default"
+        />
+      )}
       <aside
-        role="dialog"
-        aria-modal="true"
+        role={docked ? 'complementary' : 'dialog'}
+        aria-modal={docked ? undefined : true}
         aria-label="Tutor"
-        className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-rule bg-term-900 sm:w-[28rem]"
+        className={
+          docked
+            ? 'flex h-full w-[26rem] flex-col border-l border-rule bg-term-900'
+            : 'fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-rule bg-term-900 sm:w-[28rem]'
+        }
       >
       <header className="shrink-0 border-b border-rule px-5 py-4">
         <div className="flex items-center justify-between gap-4">
@@ -107,6 +123,18 @@ export const TutorPanel: React.FC<{
             ? 'Answering with the ' + activeItem.ticker + ' analysis in context'
             : 'No analysis loaded, so answers will be general.'}
         </p>
+        {/* Auto-open only happens where the tutor docks, so the switch lives there too. */}
+        {docked && (
+          <label className="-mb-2 mt-1 flex min-h-[44px] cursor-pointer items-center gap-2.5 self-start text-sm text-fg-2 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent">
+            <input
+              type="checkbox"
+              checked={autoOpen}
+              onChange={(e) => onAutoOpenChange(e.target.checked)}
+              className="h-4 w-4 accent-accent"
+            />
+            Open after each run
+          </label>
+        )}
       </header>
 
       <div className="no-scrollbar flex flex-1 flex-col gap-5 overflow-y-auto px-5 py-5">

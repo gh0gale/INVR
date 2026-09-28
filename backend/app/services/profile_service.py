@@ -15,7 +15,9 @@ def create_and_store_profile(user_id: str, payload: UserProfileRequest) -> UserP
     )
     
     # 3. Prepare the database payload and inject the verified identity
-    db_payload = profile_response.model_dump()
+    # tour_completed_at is owned by POST /profiles/tour; writing the default
+    # None here would replay the tour every time a profile is re-saved.
+    db_payload = profile_response.model_dump(exclude={"tour_completed_at"})
     db_payload["id"] = user_id
     
     # 4. Execute the database upsert bypassing RLS

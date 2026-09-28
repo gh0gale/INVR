@@ -5,7 +5,7 @@
  * figure count in at the moment it is read rather than while it is off screen.
  * Neither is a general-purpose animate-on-scroll helper.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 const DEFAULT_TITLE = 'INVR: quantitative analysis of NSE equities';
 
@@ -88,4 +88,17 @@ export function useActiveSection(
   }, [count]);
 
   return [register, active];
+}
+
+/** Live result of a media query, e.g. the lg breakpoint where the tutor docks. */
+export function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener('change', onChange);
+      return () => mql.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
 }

@@ -1,6 +1,7 @@
 import hashlib
 import json
-from typing import Dict, Literal
+from datetime import datetime
+from typing import Dict, Literal, Optional
 from pydantic import BaseModel, Field, model_validator, PrivateAttr
 
 # Width of the `user_profiles.profile_version_hash` column. Raise this only
@@ -56,6 +57,9 @@ class UserProfileRequest(BaseModel):
 class UserProfileResponse(UserProfileRequest):
     profile_version_hash: str
     contradictions_flagged: list[str] = Field(default_factory=list)
+    # When the first-login workspace tour was finished or skipped; None means
+    # it has not been shown yet (migrations/005).
+    tour_completed_at: Optional[datetime] = None
 
     @classmethod
     def create_with_hash(cls, request_data: UserProfileRequest, contradictions: list[str]) -> "UserProfileResponse":

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends
 from app.schemas.profile import UserProfileRequest, UserProfileResponse
 from app.api.deps import get_current_user_id
@@ -32,3 +33,25 @@ async def ingest_user_profile(
         raise HTTPException(status_code=422, detail=str(val_err))
     except Exception as db_err:
         raise HTTPException(status_code=500, detail=f"Database Error: {str(db_err)}")
+
+@router.post("/tour", response_model=UserProfileResponse)
+async def complete_tour(user_id: str = Depends(get_current_user_id)):
+    """Stamp the first-login workspace tour as done (finished or skipped).
+
+    Stored on the profile, not in the browser, so another device does not replay
+    it. Idempotent: a second call keeps the first timestamp.
+    """
+    try:
+        res = supabase_admin.table("user_profiles").select("*").eq("id", user_id).execute()
+        if not res.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+        row = res.data[0]
+        if not row.get("tour_completed_at"):
+            stamp = datetime.now(timezone.utc).isoformat()
+            supabase_admin.table("user_profiles").update({"tour_completed_at": stamp}).eq("id", user_id).execute()
+            row = {**row, "tour_completed_at": stamp}
+        return row
+    except HTTPException:
+        raise
+    except Exception as err:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Database Error: {str(err)}")

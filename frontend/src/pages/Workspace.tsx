@@ -1,11 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { supabase } from '../supabase';
-import { apiUrl } from '../api';
+import { apiJson, apiUrl, horizonsApi, searchSymbols } from '../api';
 import { Wordmark } from '../components/SiteChrome';
 import { MarketClock } from '../components/MarketClock';
 import { TutorPanel } from '../components/TutorPanel';
+import { SymbolSearch } from '../components/SymbolSearch';
+import { HorizonSelect } from '../components/Horizons';
+import { Tour } from '../components/Tour';
+import { WORKSPACE_TOUR } from '../lib/tourSteps';
+import { horizonLabel, resolveHorizon, type Timeframe } from '../lib/horizons';
+import { matchSuggestion, toRunTicker } from '../lib/symbols';
+import { shouldAutoOpenTutor, shouldStartTour, type RunOutcome } from '../lib/runFlow';
 import { SkeletonBlock, SkeletonLine, SkeletonMetric, SkeletonRow } from '../components/Skeleton';
 import {
   IconClose,
@@ -14,6 +21,7 @@ import {
   IconPlus,
   IconSearch,
 } from '../components/Icons';
+import type { UserProfile } from '../context/auth';
 import {
   Disclaimer,
   GateList,
@@ -26,7 +34,7 @@ import {
 import { asNum, asObj, asStr, asStrArray, verdictInk } from '../format';
 import { errorMessage, type LedgerRow } from '../types';
 import type { LogEntry } from '../components/TutorPanel';
-import { prefersReducedMotion, useDocumentTitle } from '../hooks';
+import { prefersReducedMotion, useDocumentTitle, useMediaQuery } from '../hooks';
 
 /**
  * A failed read, said as a failure. A failed history or watchlist read used to
@@ -46,20 +54,42 @@ const LoadError: React.FC<{ what: string; message: string; onRetry: () => void }
   </div>
 );
 
+/**
+ * The tour's way back in below sm, where the header has no room for its
+ * button. From sm the header's Replay tour button does the same.
+ */
+const ReplayTourLink: React.FC<{ onClick: () => void }> = ({ onClick }) => (
+  <button type="button" data-tour="tour-button" onClick={onClick} className="text-action mt-2 sm:hidden">
+    Replay the workspace tour
+  </button>
+);
+
 // Ticker shape: alphanumerics with an optional .NS suffix, used to decide
 // whether a bare input should be treated as an analysis request.
 const TICKER_PATTERN = /^[A-Za-z0-9&-]{2,12}(\.NS)?$/;
 
+// Width of the docked tutor column and the duration of the split, which
+// reports that the tutor opened or closed (motion inventory in frontend.md).
+const SPLIT_MS = 240;
+
 const getTime = () => new Date().toLocaleTimeString('en-GB', { hour12: false });
 
 export default function Workspace() {
-  const { session, profile, logout } = useAuth();
+  const { session, profile, logout, setProfileState } = useAuth();
+  const token = session?.access_token ?? null;
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  // The tutor is a drawer over the analysis, closed until it is asked for, on
-  // every size. As a permanent column it left the analysis too narrow on a
-  // laptop and a 34rem slab of chat under it on a phone.
+  // The tutor is closed until it is asked for, on every size. Once open, from
+  // lg it docks as a column and the workspace narrows beside it, so the result
+  // and the conversation are both in view; below lg it is a drawer over the
+  // analysis, because two columns on a phone squeeze both.
   const [isTutorOpen, setIsTutorOpen] = useState(false);
+  const isLg = useMediaQuery('(min-width: 1024px)');
+  const isXl = useMediaQuery('(min-width: 1280px)');
+  const tutorDocked = isLg && isTutorOpen;
+  // Between lg and xl the history sidebar steps aside while the tutor is docked,
+  // so the analysis keeps a readable width. The user's own toggle is untouched.
+  const sidebarShown = isSidebarOpen && !(tutorDocked && !isXl);
   const [sidebarTab, setSidebarTab] = useState<'recent' | 'watchlist'>('recent');
 
   // Persisted per account in the `watchlists` table (migration 004). It used to
@@ -67,7 +97,6 @@ export default function Workspace() {
   // reload (audit NEW-FE-15). Still starts empty rather than pre-seeded with
   // tickers the user never chose.
   const [watchlist, setWatchlist] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const [ledgerItems, setLedgerItems] = useState<LedgerRow[]>([]);
   const [ledgerLoading, setLedgerLoading] = useState(true);
@@ -105,14 +134,113 @@ export default function Workspace() {
   /* eslint-enable react-hooks/set-state-in-effect */
   const logEndRef = useRef<HTMLDivElement>(null);
 
+  const appendLog = (entry: Omit<LogEntry, 'time'>) =>
+    setLog((prev) => [...prev, { ...entry, time: getTime() }]);
+
+  /* ---------------------------------------------------------- horizons */
+  // The engine's four timeframes. The selector follows the stock in focus:
+  // the horizon it was last run on (migration 005), else the profile's.
+  const [horizon, setHorizon] = useState<Timeframe>(() => resolveHorizon(null, profile?.timeframe));
+  // The stock the selector is showing a horizon for, as `SYMBOL.NS`.
+  const [focusTicker, setFocusTicker] = useState<string | null>(null);
+  const focusSeq = useRef(0);
+
+  /** The horizon saved for a stock; the profile's if none or the read fails. */
+  const horizonFor = async (ticker: string): Promise<Timeframe> => {
+    if (!token) return resolveHorizon(null, profile?.timeframe);
+    try {
+      const { timeframe } = await horizonsApi.forStock(token, ticker);
+      return resolveHorizon(timeframe, profile?.timeframe);
+    } catch (err) {
+      console.error('Could not read the saved horizon:', err);
+      return resolveHorizon(null, profile?.timeframe);
+    }
+  };
+
+  /** A stock came into focus: select its saved horizon. Stale answers are dropped. */
+  const focusStock = async (ticker: string) => {
+    setFocusTicker(ticker);
+    const mine = ++focusSeq.current;
+    const h = await horizonFor(ticker);
+    if (mine === focusSeq.current) setHorizon(h);
+  };
+
+  const saveStockHorizon = async (ticker: string, timeframe: Timeframe) => {
+    if (!token) return;
+    try {
+      await horizonsApi.setForStock(token, ticker, timeframe);
+    } catch (err) {
+      appendLog({ role: 'sys', text: `Could not remember the horizon for ${ticker}: ${errorMessage(err, 'save failed')}` });
+    }
+  };
+
+  const changeHorizon = (t: Timeframe) => {
+    setHorizon(t);
+    if (focusTicker) void saveStockHorizon(focusTicker, t);
+  };
+
+  /* ------------------------------------------------ tutor auto-open, tour */
+  const autoOpenKey = userId ? `invr.tutorAutoOpen.${userId}` : null;
+  const [autoOpenTutor, setAutoOpenTutor] = useState(true);
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!autoOpenKey) return;
+    try {
+      setAutoOpenTutor(localStorage.getItem(autoOpenKey) !== 'off');
+    } catch {
+      setAutoOpenTutor(true); // storage blocked: keep the default
+    }
+  }, [autoOpenKey]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+  const toggleAutoOpen = (on: boolean) => {
+    setAutoOpenTutor(on);
+    try {
+      if (autoOpenKey) localStorage.setItem(autoOpenKey, on ? 'on' : 'off');
+    } catch {
+      // Storage blocked: the choice holds for this visit only.
+    }
+  };
+
+  const runSeq = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  // The tour starts on first login and is marked done on the server, so a
+  // second device does not replay it. Replay from Help does not re-mark it.
+  const [isTourOn, setIsTourOn] = useState(false);
+  const tourStarted = useRef(false);
+  const workspaceReady = !ledgerLoading;
+  useEffect(() => {
+    if (tourStarted.current || !workspaceReady || !shouldStartTour(profile)) return;
+    tourStarted.current = true;
+    setIsTourOn(true);
+  }, [workspaceReady, profile]);
+
+  const finishTour = useCallback(async () => {
+    setIsTourOn(false);
+    if (!token || !profile || profile.tour_completed_at) return;
+    try {
+      const updated = await apiJson<UserProfile>('/api/v1/profiles/tour', token, { method: 'POST' });
+      setProfileState({ ...profile, tour_completed_at: updated.tour_completed_at ?? null });
+    } catch (err) {
+      appendLog({
+        role: 'sys',
+        text: `Could not record that you have seen the tour, so it may show again: ${errorMessage(err, 'save failed')}`,
+      });
+    }
+  }, [token, profile, setProfileState]);
+
   const silver = activeItem?.silver_state;
   const gold = activeItem?.gold_verdict;
   const setup = gold ? asObj(gold.trade_setup) : null;
   const narrative = gold ? asObj(gold.llm_analysis) : null;
   const isWatched = activeItem ? watchlist.includes(activeItem.ticker) : false;
 
-  const appendLog = (entry: Omit<LogEntry, 'time'>) =>
-    setLog((prev) => [...prev, { ...entry, time: getTime() }]);
 
   // Scrolls the transcript pane only. scrollIntoView moved the whole page on
   // mobile, dragging the reader away from a result they had just asked for.
@@ -292,14 +420,23 @@ export default function Workspace() {
 
     const rawClean = rawTicker.trim().toUpperCase().replace(/\.NS$/i, '');
     const ticker = `${rawClean}.NS`;
+    const runId = ++runSeq.current;
+    let outcome: RunOutcome = 'failed';
 
     setIsProcessing(true);
-    appendLog({ role: 'sys', text: `Running the ${profile.timeframe || 'swing'} pipeline for ${ticker}.` });
+    // The horizon in the selector when this stock is the one in focus,
+    // otherwise the one saved for it (a watchlist re-run, a tutor command).
+    const timeframe = ticker === focusTicker ? horizon : await horizonFor(ticker);
+    if (ticker !== focusTicker) {
+      setFocusTicker(ticker);
+      setHorizon(timeframe);
+    }
+    appendLog({ role: 'sys', text: `Running the ${horizonLabel(timeframe)} check for ${ticker}.` });
 
     try {
       const payload = {
         ticker,
-        timeframe: profile.timeframe || 'swing',
+        timeframe,
         user_profile: {
           risk_tolerance: profile.risk,
           experience_level: profile.experience,
@@ -344,6 +481,7 @@ export default function Workspace() {
 
         if (staleData && staleData.length > 0) {
           setActiveItem(staleData[0] as LedgerRow);
+          outcome = 'fallback';
           appendLog({ role: 'sys', text: 'Showing the previous stored run for this ticker.' });
           void fetchLedger();
         }
@@ -371,6 +509,8 @@ export default function Workspace() {
         const row = data[0] as LedgerRow;
         setActiveItem(row);
         void fetchLedger();
+        outcome = 'success';
+        void saveStockHorizon(ticker, timeframe);
 
         const rowScore = asNum(row.gold_verdict?.confidence_score);
         const score = rowScore != null ? ` Confidence ${(rowScore / 10).toFixed(1)} of 10.` : '';
@@ -393,6 +533,22 @@ export default function Workspace() {
       setIsProcessing(false);
       scrollLog();
     }
+
+    // Once per run, here rather than in an effect, so no re-render reopens it.
+    // Only where the tutor docks beside the result: below lg it would cover
+    // the verdict the user is about to read.
+    if (
+      isLg &&
+      shouldAutoOpenTutor({
+        outcome,
+        runId,
+        latestRunId: runSeq.current,
+        mounted: mounted.current,
+        enabled: autoOpenTutor,
+      })
+    ) {
+      setIsTutorOpen(true);
+    }
   };
 
   const handleCommand = async (e: React.FormEvent) => {
@@ -406,11 +562,30 @@ export default function Workspace() {
     const isAnalyzeCmd = cmd.toUpperCase().startsWith('/ANALYZE ');
     const isBareTicker = TICKER_PATTERN.test(cmd);
 
-    if (isAnalyzeCmd || isBareTicker) {
+    // A ticker typed here is checked against the same NSE search as the header
+    // field, so free text never reaches the run API. A bare word that is not a
+    // listing (RSI, ATR) is a question for the tutor, not an error.
+    if ((isAnalyzeCmd || isBareTicker) && token) {
       const tk = isAnalyzeCmd ? cmd.substring(9).trim() : cmd;
       if (tk) {
-        await runAnalysis(tk);
-        return;
+        let match = null;
+        try {
+          match = matchSuggestion(tk, await searchSymbols(tk, token));
+        } catch (err) {
+          if (isAnalyzeCmd) {
+            appendLog({ role: 'sys', text: `Could not check ${tk}: ${errorMessage(err, 'search failed')}` });
+            return;
+          }
+        }
+        const runTicker = match ? toRunTicker(match) : null;
+        if (runTicker) {
+          await runAnalysis(runTicker);
+          return;
+        }
+        if (isAnalyzeCmd) {
+          appendLog({ role: 'sys', text: `No NSE listing matches "${tk}". Search for it in the field at the top.` });
+          return;
+        }
       }
     }
 
@@ -505,6 +680,29 @@ export default function Workspace() {
 
   const showAnalysisSkeleton = isProcessing && !activeItem;
 
+  const [tutorLingering, setTutorLingering] = useState(false);
+  const closeTutor = useCallback(() => {
+    setIsTutorOpen(false);
+    if (isLg && !prefersReducedMotion()) setTutorLingering(true);
+  }, [isLg]);
+
+  const tutorPanel = (docked: boolean) => (
+    <TutorPanel
+      log={log}
+      command={command}
+      setCommand={setCommand}
+      onSubmit={handleCommand}
+      isProcessing={isProcessing}
+      isStreaming={isStreaming}
+      activeItem={activeItem}
+      logEndRef={logEndRef}
+      onClose={closeTutor}
+      docked={docked}
+      autoOpen={autoOpenTutor}
+      onAutoOpenChange={toggleAutoOpen}
+    />
+  );
+
   return (
     // Below lg the workspace scrolls as one document: a fixed-height shell left
     // the analysis a sliver above the tutor on a phone, and a two-pane split on
@@ -533,59 +731,28 @@ export default function Workspace() {
             <Wordmark />
           </Link>
 
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const q = searchQuery.trim();
-              if (q && !isProcessing) {
-                setSearchQuery('');
-                await runAnalysis(q);
-              }
-            }}
-            className="flex min-w-0 flex-1 items-center gap-2 sm:max-w-xl"
-          >
-            <label htmlFor="ticker-input" className="sr-only">
-              NSE ticker to analyse
-            </label>
-            {/*
-              Analyse sits inside the field, so the row carries two things, the
-              search and the account action, and the search gets the rest of the
-              width. The padding is on the input, not the box, so the whole
-              control is a tap target rather than a 27px line of text.
-            */}
-            <div className="control flex min-w-0 flex-1 items-center gap-2.5 pl-3.5">
-              <IconSearch className="h-4 w-4 shrink-0 text-fg-3" />
-              <input
-                id="ticker-input"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ticker, for example TCS or RELIANCE"
-                disabled={isProcessing}
-                autoComplete="off"
-                spellCheck={false}
-                className="w-full min-w-0 bg-transparent py-3 text-base outline-none placeholder:text-fg-3 disabled:opacity-60"
-              />
-              <span className="kbd hidden shrink-0 sm:inline">Enter</span>
-              <button
-                type="submit"
-                disabled={isProcessing}
-                className="btn-primary m-1 shrink-0 px-3.5 sm:px-5"
-              >
-                {isProcessing ? 'Running' : 'Analyse'}
-              </button>
-            </div>
-          </form>
+          <SymbolSearch
+            token={token}
+            busy={isProcessing}
+            onPick={(ticker) => void focusStock(ticker)}
+            onRun={(ticker) => void runAnalysis(ticker)}
+          />
+
+          <HorizonSelect value={horizon} disabled={isProcessing} onChange={changeHorizon} />
 
           <div className="ml-auto flex shrink-0 items-center gap-4">
             <div className="hidden lg:block">
               <MarketClock compact />
             </div>
-            {profile?.timeframe && (
-              <p className="label hidden md:block">
-                {String(profile.timeframe).replace('_', ' ')} horizon
-              </p>
-            )}
+            <button
+              type="button"
+              data-tour="tour-button"
+              onClick={() => setIsTourOn(true)}
+              disabled={isTourOn}
+              className="btn-quiet hidden sm:inline-flex"
+            >
+              Replay tour
+            </button>
             <button onClick={logout} className="btn-quiet px-3.5 sm:px-5">
               Sign out
             </button>
@@ -595,8 +762,11 @@ export default function Workspace() {
 
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         {/* ---------------------------------------------------------- sidebar */}
-        {isSidebarOpen && (
-          <aside className="hidden w-[260px] shrink-0 flex-col border-r border-rule bg-term-900 lg:flex">
+        {sidebarShown && (
+          <aside
+            data-tour="recent-runs"
+            className="hidden w-[260px] shrink-0 flex-col border-r border-rule bg-term-900 lg:flex"
+          >
             <div className="flex shrink-0 border-b border-rule">
               {(['recent', 'watchlist'] as const).map((tab) => (
                 <button
@@ -649,7 +819,10 @@ export default function Workspace() {
                       >
                         <button
                           type="button"
-                          onClick={() => setActiveItem(item)}
+                          onClick={() => {
+                            setActiveItem(item);
+                            void focusStock(item.ticker);
+                          }}
                           aria-pressed={selected}
                           className="min-w-0 flex-1 p-3 text-left"
                         >
@@ -748,13 +921,13 @@ export default function Workspace() {
         {/* -------------------------------------------------------- main sheet */}
         <main className="no-scrollbar flex-1 lg:min-h-0 lg:overflow-y-auto">
           {/* Bottom room for the tutor launcher, which floats over the sheet. */}
-          <div className="mx-auto max-w-3xl px-5 pb-24 pt-6">
+          <div data-tour="analysis-area" className="mx-auto max-w-3xl px-5 pb-24 pt-6">
             {/*
               Recent runs below lg, where the sidebar is hidden. Without this a
               phone had no way back to an earlier analysis.
             */}
             {ledgerItems.length > 0 && (
-              <nav aria-label="Recent runs" className="mb-5 border-b border-rule pb-3 lg:hidden">
+              <nav aria-label="Recent runs" data-tour="recent-runs" className="mb-5 border-b border-rule pb-3 lg:hidden">
                 <p className="label mb-2">Recent runs</p>
                 {/*
                   One scrolling row, not a wrapping block: five runs wrapped to
@@ -768,7 +941,10 @@ export default function Workspace() {
                       <button
                         key={item.log_id}
                         type="button"
-                        onClick={() => setActiveItem(item)}
+                        onClick={() => {
+                            setActiveItem(item);
+                            void focusStock(item.ticker);
+                          }}
                         aria-pressed={selected}
                         className={`inline-flex min-h-[44px] shrink-0 items-baseline gap-2 whitespace-nowrap rounded-[2px] border px-3 py-2 transition-colors ${
                           selected ? 'border-accent bg-term-850' : 'border-rule-strong hover:border-accent'
@@ -816,10 +992,13 @@ export default function Workspace() {
                   Enter a ticker to run the pipeline
                 </h2>
                 <p className="mt-4 max-w-xl text-lg leading-relaxed text-fg-2">
-                  Type an NSE symbol in the field above, or ask the tutor a question in the
-                  panel beside this one. Results are written to the ledger and listed under
-                  recent runs.
+                  Search for a company or NSE symbol above, pick a horizon, then Analyse. Every
+                  run is written to the ledger and listed under recent runs, and the tutor can
+                  explain any part of it.
                 </p>
+                <button type="button" data-tour="tour-button" onClick={() => setIsTourOn(true)} className="text-action mt-3">
+                  Show me around the workspace
+                </button>
                 {/* The sidebar is hidden below lg, so the failure is stated here too. */}
                 {ledgerError && (
                   <div className="-mx-3 mt-4 border-t border-rule pt-2">
@@ -870,7 +1049,9 @@ export default function Workspace() {
                   )}
                 </section>
 
-                <div className="grid gap-x-10 gap-y-8 md:grid-cols-2">
+                <div
+                  className={`grid gap-x-10 gap-y-8 ${tutorDocked ? '2xl:grid-cols-2' : 'md:grid-cols-2'}`}
+                >
                   <section>
                     <h2 className="label mb-3 border-b border-rule pb-2">Silver metrics</h2>
                     <MetricTable silver={silver} />
@@ -932,6 +1113,7 @@ export default function Workspace() {
 
                 <div className="border-t border-rule pt-5">
                   <Disclaimer />
+                  <ReplayTourLink onClick={() => setIsTourOn(true)} />
                 </div>
               </article>
             )}
@@ -945,6 +1127,7 @@ export default function Workspace() {
         {!isTutorOpen && (
           <button
             type="button"
+            data-tour="tutor-launcher"
             onClick={() => setIsTutorOpen(true)}
             aria-expanded={false}
             className="btn-primary fixed bottom-4 right-4 z-30"
@@ -953,20 +1136,29 @@ export default function Workspace() {
           </button>
         )}
 
-        {isTutorOpen && (
-          <TutorPanel
-            log={log}
-            command={command}
-            setCommand={setCommand}
-            onSubmit={handleCommand}
-            isProcessing={isProcessing}
-            isStreaming={isStreaming}
-            activeItem={activeItem}
-            logEndRef={logEndRef}
-            onClose={() => setIsTutorOpen(false)}
-          />
+        {/*
+          From lg the tutor is a column the sheet makes room for; the width
+          change is the motion, and it reports that the tutor opened or closed.
+          The panel stays mounted until the column has closed so it slides out
+          rather than vanishing, and the sheet keeps its own scroll position
+          because it is never remounted.
+        */}
+        {isLg ? (
+          <div
+            className="tutor-split flex shrink-0 overflow-hidden lg:min-h-0"
+            style={{ width: isTutorOpen ? '26rem' : 0, transitionDuration: `${SPLIT_MS}ms` }}
+            onTransitionEnd={(e) => {
+              if (e.target === e.currentTarget && !isTutorOpen) setTutorLingering(false);
+            }}
+          >
+            {(isTutorOpen || tutorLingering) && tutorPanel(true)}
+          </div>
+        ) : (
+          isTutorOpen && tutorPanel(false)
         )}
       </div>
+
+      {isTourOn && <Tour steps={WORKSPACE_TOUR} onDone={finishTour} />}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 
 class APIUserProfile(BaseModel):
     risk_tolerance: str = Field(default="moderate")
@@ -9,7 +9,11 @@ class APIUserProfile(BaseModel):
 
 class PipelineRequest(BaseModel):
     ticker: str = Field(..., description="NSE Stock ticker symbol (e.g., RELIANCE.NS)")
-    timeframe: str = Field(..., description="swing | positional | long_term")
+    # Constrained to PIPELINE_CONFIG keys so a bad value is a 422 here rather
+    # than a ValueError inside the graph (a 500).
+    timeframe: Literal["intraday", "swing", "positional", "long_term"] = Field(
+        ..., description="swing | positional | long_term"
+    )
     user_profile: Optional[APIUserProfile] = Field(default_factory=APIUserProfile)
     session_id: Optional[str] = None
 

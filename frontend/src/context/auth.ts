@@ -14,6 +14,8 @@ export interface UserProfile {
   contradictions_flagged?: string[];
   semantic_profile?: JsonObject;
   created_at?: string;
+  /** When the first-login workspace tour was finished or skipped; null until then. */
+  tour_completed_at?: string | null;
 }
 
 export interface AuthContextType {

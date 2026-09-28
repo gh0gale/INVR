@@ -318,10 +318,20 @@
     display: none;
   }
 
-  /* Magnitude bars and meters settle instantly rather than growing. */
-  .measure {
+  /* Magnitude bars, meters and the tutor split settle instantly. */
+  .measure,
+  .tutor-split {
     transition: none !important;
   }
+}
+
+/*
+  The workspace and tutor split (lg and up). The column's width change reports
+  that the tutor opened or closed; the sheet narrows beside it.
+*/
+.tutor-split {
+  transition-property: width;
+  transition-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
 /* Magnitude bars, confidence meters, progress. Width is the value. */

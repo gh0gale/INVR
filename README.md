@@ -244,7 +244,7 @@ INVR/
 │   ├── config/           # Configurable thresholds (gate_thresholds.py)
 │   ├── migrations/       # SQL applied by hand (001_ledger_rls.sql)
 │   ├── scripts/          # The Engine Room, incl. the shared _grading.py rule
-│   └── tests/            # 280 unit tests, no Ollama or network required
+│   └── tests/            # 309 unit tests, no Ollama or network required
 │
 ├── frontend/             # React Vite Application
 │   ├── src/
@@ -314,7 +314,7 @@ client-side write, protecting the prediction history the grading loop depends on
 
 ### Run the test suite
 
-280 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
+309 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
 interpolation, the shared grading rule, ledger versioning and the drift
 statistics, that persisted values fit their columns, that one account's analysis
 history stays its own, that fundamental ratios are normalised to the unit their
@@ -327,7 +327,7 @@ None of them need Ollama, Supabase, an API key or a network connection.
 
 ```bash
 cd backend
-pytest tests/                        # all 280, about 15 seconds
+pytest tests/                        # all 309, about 20 seconds
 python -m scripts.data_coverage      # real market data: which gates actually ran
 pytest tests/test_gold_gates.py -v   # one file
 ```
@@ -344,6 +344,8 @@ database they are already applied.
 # Supabase SQL editor, or:
 supabase db execute -f backend/migrations/001_ledger_rls.sql
 supabase db execute -f backend/migrations/003_user_scoped_history.sql
+supabase db execute -f backend/migrations/004_watchlists.sql
+supabase db execute -f backend/migrations/005_horizons_and_tour.sql
 ```
 
 **001** revokes client writes on `algorithmic_ledger`. Without it the browser
@@ -358,6 +360,13 @@ the workspace cannot tell one account's analysis history from another's.
 
 **004** creates the `watchlists` table. Without it the star button in the
 workspace logs an error and the list stays empty.
+
+**005** adds `user_profiles.tour_completed_at` (the first-login workspace tour)
+and the `stock_horizons` table, which remembers the horizon (intraday, swing,
+positional or long term) each user last ran each stock on. Without it every
+stock opens on the onboarding horizon and the tour shows on every visit. The backend serves them at `/api/v1/horizons` and
+`/api/v1/profiles/tour`; ticker suggestions come from `/api/v1/symbols/search`
+(Yahoo search through yfinance, NSE only, no key).
 
 ### Verify the whole system end to end
 
