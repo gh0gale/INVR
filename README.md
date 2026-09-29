@@ -1,88 +1,84 @@
 # INVR: Algorithmic Portfolio Analyzer Engine
 
-**Enterprise-grade quantitative analysis and AI tutoring platform for financial markets**
+**Quantitative analysis of NSE-listed equities, with an AI tutor that explains the result**
 
-INVR is a comprehensive algorithmic portfolio intelligence platform that fuses quantitative technical and fundamental analysis with an interactive LLM-powered financial tutor. Built for investors and traders who demand institutional-grade market screening, deterministic trade setups, and natural language portfolio insights.
+INVR runs a deterministic quantitative pipeline over a stock and explains the outcome. Technical and fundamental data are turned into gate results, a verdict, a confidence score and an ATR-based trade setup by fixed arithmetic. A language model then narrates those figures and answers questions about them in a streaming tutor. The model never decides the verdict and never calculates a level.
+
+Coverage is Indian equities listed on the NSE (`SYMBOL.NS`). The product is for education and is not investment advice.
 
 ## Preview
 
-### Overview
+### Workspace layout
 
 ```mermaid
 flowchart TB
     classDef layout fill:#0F1114,stroke:#D9A03C,stroke-width:2px,color:#E8E4DA;
     classDef panel fill:#15181D,stroke:#3B434D,stroke-width:1px,color:#9BA1A8;
     classDef highlight fill:#23282F,stroke:#D9A03C,stroke-width:2px,color:#E8E4DA;
-    
-    subgraph UI["(React/Vite)"]
+
+    subgraph UI["React / Vite workspace"]
         direction TB
-        TopNav["Ticker Search, Session Clock & Tape"]:::panel
-        
-        subgraph Workspace["Main Workspace Grid"]
+        Header["Header: NSE ticker search, horizon selector, Analyse, session clock"]:::panel
+
+        subgraph Grid["Workspace"]
             direction LR
-            
-            subgraph LeftCol["Left Panel"]
+
+            subgraph LeftCol["Sidebar (from lg)"]
                 direction TB
-                Ledger["Recent Runs (Algorithmic Ledger)"]:::panel
-                Watchlist["Watchlist (session only)"]:::panel
+                Recent["Recent runs (last 5 tickers, per user)"]:::panel
+                Watchlist["Watchlist (saved in Supabase)"]:::panel
             end
-            
-            subgraph CenterCol["Active Asset Analysis"]
+
+            subgraph CenterCol["Active analysis"]
                 direction TB
-                Ladder["Price Structure Ladder (SMAs, setup levels)"]:::panel
-                Metrics["Silver Metric Table (RSI, ATR, SMAs)"]:::panel
-                Verdict["Gold Verdict & ATR Trade Setup"]:::highlight
+                Ladder["Price structure ladder (SMAs, setup levels)"]:::panel
+                Metrics["Silver metrics and gate results"]:::panel
+                Verdict["Gold verdict, confidence and ATR trade setup"]:::highlight
             end
-            
-            subgraph RightCol["AI Interaction"]
+
+            subgraph RightCol["Tutor (opens on request)"]
                 direction TB
-                Terminal["🤖 SSE Chat Terminal (Tutor)"]:::highlight
-                Input["⌨️ Command Input (/analyze)"]:::panel
+                Chat["Streaming chat (SSE)"]:::highlight
             end
-            
+
             LeftCol --> CenterCol
             CenterCol --> RightCol
         end
-        
-        TopNav --> Workspace
+
+        Header --> Grid
     end
     class UI layout
 ```
 
-### AI Tutor Terminal
+### Tutor request
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor U as  User
-    participant UI as  React UI
-    participant API as  FastAPI (Tutor)
-    participant LG as  LangGraph Orchestrator
-    participant DB as  Supabase
-    participant LLM as  Ollama (Llama 3)
-    
-    U->>UI: Types "/analyze RELIANCE.NS"
-    UI->>API: POST /api/v1/tutor/chat/stream (JWT)
-    API->>DB: Fetch Active Profile (Risk: Moderate)
-    DB-->>API: Profile Context
-    
-    API->>LG: Invoke State Machine
-    note right of LG: Context Injection:<br/>1. Silver Metrics<br/>2. Gold Verdict<br/>3. User Constraints
-    
-    alt is Command Route
-        LG->>LG: Extract Intent & Route to Quant Agent
-    else is General Chat Route
-        LG->>LG: Route to Synthesizer Agent
+    actor U as User
+    participant UI as React UI
+    participant API as FastAPI
+    participant LG as Tutor graph (LangGraph)
+    participant DB as Supabase
+    participant LLM as Groq / Gemini (Ollama locally)
+
+    U->>UI: Asks a question about the analysis on screen
+    UI->>API: POST /api/v1/tutor/chat/stream (JWT, flat analysis_context)
+    API->>API: Input guardrail
+    API->>DB: Load working memory for the session
+    API->>LG: Invoke graph
+    LG->>LG: scope gate (refuses out-of-scope with fixed text)
+    LG->>LG: semantic router (embedding vs 5 centroids)
+    opt news route
+        LG->>LG: fetch yfinance headlines
     end
-    
-    LG->>LLM: Stream Inference Request
-    
-    loop Server-Sent Events (SSE)
-        LLM-->>LG: Yield raw tokens
-        LG-->>API: Format chunk
-        API-->>UI: stream text chunk
-        UI-->>U: Typewriter effect display
+    LG->>LLM: Stream generation
+    loop Server-Sent Events
+        LLM-->>API: tokens
+        API-->>UI: data: {"token": "..."}
     end
+    API-->>UI: data: [DONE]
+    API-)DB: Background: update session memory
 ```
 
 ### Architecture
@@ -93,341 +89,323 @@ flowchart LR
     classDef backend fill:#064e3b,stroke:#10b981,color:#fff;
     classDef db fill:#4c1d95,stroke:#8b5cf6,color:#fff;
     classDef engine fill:#7f1d1d,stroke:#ef4444,color:#fff;
-    
-    Client[" React/Vite UI"]:::frontend
-    
-    subgraph Cloud["INVR Infrastructure"]
-        API[" FastAPI Gateway"]:::backend
-        Quant[" Tri-Layer Quant Engine"]:::backend
-        LLM[" LangGraph/Ollama"]:::backend
-        DB[(" Supabase (PostgreSQL)")]:::db
-        Engine[" Engine Room (Cron)"]:::engine
-        
+    classDef ext fill:#1e293b,stroke:#475569,color:#fff;
+
+    Client["React / Vite SPA<br>(Cloudflare Worker, static assets)"]:::frontend
+
+    subgraph Render["Render web service (Docker)"]
+        API["FastAPI"]:::backend
+        Quant["Bronze / Silver / Gold"]:::backend
+        Graphs["LangGraph: analysis + tutor"]:::backend
         API --> Quant
-        API <--> LLM
-        API <--> DB
-        Quant -.-> DB
-        Engine --> DB
+        API --> Graphs
     end
-    
-    Client <-->|REST & SSE Streams| API
+
+    DB[("Supabase<br>Postgres + Auth")]:::db
+    LLMs["Groq (primary)<br>Gemini (failover)"]:::ext
+    YF["yfinance<br>(Yahoo Finance)"]:::ext
+    Engine["Engine Room<br>(GitHub Actions cron)"]:::engine
+
+    Client <-->|"REST + SSE (JWT)"| API
+    Client <-->|"reads under RLS"| DB
+    API <--> DB
+    Quant --> YF
+    Graphs --> LLMs
+    Engine --> DB
+    Engine --> YF
 ```
 
 ## Key Features
 
-- **Multi-Layer Analysis Pipeline** - Tri-layer architecture (Bronze, Silver, Gold) isolating data ingestion, mathematical vectorization, and deterministic verdict logic.
-- **Hard Gate Validation** - Configurable threshold parameters governing secular trend validation, volatility limits, and cash flow stability. Money inputs are constrained at the schema and clamped again at the point of use, so a nonsensical capital figure yields no trade setup rather than a negative position size.
-- **Algorithmic Trade Setups** - Automated, mathematically driven generation of entry zones, stop losses, and target prices utilizing Average True Range (ATR) metrics.
-- **Interactive AI Tutor** - Context-aware, SSE-streaming conversational agent orchestrated via LangGraph, offering tailored Indian market context, stock-linked definitional explanations, and strict "Header: Content" structured output.
-- **Hybrid Grading Engine** - Background drift analysis comparing historical predictions against matured market outcomes via a dedicated LangGraph state machine (`engine_room_graph.py`). Grader and simulator share one rule, every verdict including `MONITOR` is scoreable, and threshold changes are proposed from bootstrap intervals rather than a formula that only counted rows.
-- **End-to-End Observability** - OpenTelemetry & Arize Phoenix telemetry tracing root API requests, LangGraph node steps, and linking financial outcome scores to LLM generation spans.
-- **Terminal Interface** - React/Vite frontend built on a trading-terminal design system: charcoal surfaces, a single amber accent, hairline rules, monospaced figures, a live NSE session clock, a ticker tape of real ledger rows, and a scroll-advanced walkthrough of one real pipeline run. Every animation reports a fact; none is decorative.
+- **Bronze / Silver / Gold pipeline.** Bronze fetches only what the chosen horizon needs, Silver is pure vectorised pandas, and Gold applies a horizon-specific set of 5 to 6 pass/warn/fail gates, resolves a verdict and applies three overrides. A gate whose input was never fetched does not vote.
+- **Four horizons.** Intraday, swing, positional and long-term each fetch different data and apply different gates. The workspace remembers the horizon you last ran each stock on.
+- **Deterministic verdict and confidence.** Confidence is a weighted gate-pass ratio mapped onto 50 to 95. After the model's JSON is parsed, verdict and confidence are overwritten from Gold, and the figures in the narrative are scored against the engine's.
+- **ATR trade setup.** Entry zone, stop and target from Average True Range, with position size limited to 2% risk and clamped to the user's capital. Long-term runs have no setup.
+- **Streaming tutor.** A LangGraph agent with a deterministic scope gate, an embedding router (definition, portfolio, scenario, news, fallback), an optional news tool and per-session memory.
+- **NSE ticker search.** The header field is an autocomplete over `/api/v1/symbols/search` (Yahoo search through `yfinance`, NSE equities only). Only a searched symbol is ever run.
+- **Watchlist and history per user.** Both are stored in Supabase and protected by row-level security.
+- **First-login workspace tour.** Completion is stored on the profile, so another device does not replay it.
+- **Engine Room.** A daily grader scores matured predictions against real highs and lows, a weekly drift analyzer proposes threshold changes from bootstrap intervals, and a human approves any change through a LangGraph interrupt.
+- **Hosted models with failover.** Groq primary, Gemini fallback, and a deterministic narrative if both fail. Ollama is supported for local development.
+- **Observability.** OpenTelemetry spans (with LangChain auto-instrumentation) to an OTLP collector such as Arize Phoenix. The trace id is stored on each ledger row.
+- **Terminal interface.** Charcoal surfaces, one amber accent, hairline rules, a live NSE session clock, a ticker tape of real ledger rows, and a scroll-advanced walkthrough of one real pipeline run. No icon, animation or charting library.
 
-## Quick Start
+## How a run works
 
-### Installation
+1. **Onboarding.** A new user answers six questions (experience, goal, default horizon, risk, allocation, capital). The backend stores them in `user_profiles` with a `profile_version_hash`.
+2. **Search and horizon.** The user searches for a company or NSE symbol and picks a match. The horizon selector shows the horizon saved for that stock, or the onboarding horizon if none.
+3. **Analyse.** The workspace posts `{ticker, timeframe, user_profile, session_id}` to `POST /api/v1/analytics/process` with the Supabase JWT.
+4. **Bronze.** yfinance price history for the horizon's period and interval, plus fundamentals, the sector index and NSE circuit status where the horizon asks for them.
+5. **Silver.** SMAs, Wilder RSI and ATR, sector relative strength, market regime and horizon-specific fundamentals.
+6. **Gold.** Gates, verdict, overrides, confidence and trade setup.
+7. **Synthesis.** The model writes a JSON tear sheet from the Silver and Gold state. It is validated against a schema, retried up to twice on failure, and its verdict and confidence are replaced by Gold's.
+8. **Ledger.** The backend writes the `algorithmic_ledger` row and the user's `prediction_interactions` row before responding, and returns the row's `log_id`. The workspace reads that exact row from Supabase and renders it.
+9. **Tutor.** Questions go to the streaming tutor with a flat `analysis_context` built from the displayed row.
 
-```bash
-# Clone the repository
-git clone https://github.com/gh0gale/INVR.git
-cd INVR
+## Core Systems
 
-# Set up Python backend (FastAPI)
-cd backend
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+### 1. The quant pipeline (`backend/app/orchestrator.py`)
 
-# Set up React frontend (Vite + TypeScript)
-cd ../frontend
-npm install
-```
+`fetch_data → quant_engine → llm_synthesizer → validate_synthesis → (retry | END)` as a LangGraph state machine.
 
-### Basic Usage Flow (Example Use Case)
+- **Bronze** (`services/bronze_service.py`) follows the manifest in `pipeline/router.py`. Optional fetches run concurrently, so one failing degrades the result instead of failing the request.
+- **Silver** (`services/silver_service.py`) has no I/O and no business logic. Most unit tests target it.
+- **Gold** (`services/gold_service.py`) reads every threshold from `config/gate_thresholds.py`.
+- **Synthesis** is cached for six hours, keyed on the prompt, model identity, profile, verdict and Silver state.
 
-Meet **Aarav**, an intermediate swing trader looking to evaluate Reliance Industries (`RELIANCE.NS`) with a capital of ₹1,00,000.
+### 2. The tutor (`backend/app/pipeline/tutor_graph.py`)
 
-1. **Onboarding**: Aarav sets up his secure profile. The system hashes this profile into a unique `semantic_hash` in Supabase, anchoring his risk tolerance (Moderate), experience level (Intermediate), and capital (₹100,000).
-2. **Analysis Trigger**: In the INVR Workspace, Aarav types `/analyze RELIANCE` in the command terminal.
-3. **Data Fetching (Bronze Layer)**: The FastAPI backend securely pulls historical OHLCV data, balance sheets, and institutional activity vectors for the asset, while checking real-time market circuit breakers.
-4. **Metric Calculation (Silver Layer)**: The system executes Pandas-based vectorized math, instantly calculating localized momentum (RSI), price volatility (ATR), Moving Averages (20, 50, 200), and fundamental metrics (e.g., Book Value Growth, Free Cash Flow margins).
-5. **Deterministic Verdict (Gold Layer)**: The pipeline evaluates the computed vectors against strict, hard-coded gate thresholds (e.g., ensuring price > 200 SMA). With secular trend requirements met and no overbought signals flagged, it produces a "BUY ON DIP" verdict alongside an ATR-calculated Trade Setup (Entry Zone, Target, Stop Loss). 
-6. **AI Synthesis & Tutor Integration**: The LLM Synthesizer (via local Ollama) translates these metrics into a readable executive summary, bypassing hallucinations by strictly adhering to the injected Silver/Gold states and formatting responses in clean "Header: Content" sections. When Aarav asks: *"What if I allocate 50% of my portfolio to this?"* the LangGraph orchestrator intercepts the intent, routes it to the Portfolio Simulation node, and advises on diversification limits tailored to his predefined Moderate risk profile.
-7. **Ledger Archival**: The entire transaction, alongside the synthesized verdict, baseline metrics, and OpenTelemetry `trace_id`, is quietly committed to the `algorithmic_ledger` table in Supabase for future grading.
+`scope → (refuse | router → (news_tool) → generate)`. Routing is not an LLM call: the message is embedded and matched to the nearest of five precomputed centroids, falling back below a confidence threshold. Out-of-scope questions (system internals, off-topic) are refused with fixed text and no model call. Every request first passes an input guardrail (regex block list, then a model classifier that fails closed in `block` mode).
 
-## Architecture & Data Flow
+### 3. The Engine Room (`backend/scripts/`, `backend/app/pipeline/engine_room_graph.py`)
 
-```mermaid
-flowchart TD
-    classDef bronze fill:#b45309,stroke:#fbbf24,color:#fff;
-    classDef silver fill:#475569,stroke:#94a3b8,color:#fff;
-    classDef gold fill:#854d0e,stroke:#facc15,color:#fff;
-    classDef base fill:#1e293b,stroke:#475569,color:#fff;
+- **Grade ledger** resolves `PENDING` rows past maturity (swing 15 days, positional 90, long-term 365) into `WIN`, `LOSS` or `DRAW` using the one rule in `scripts/_grading.py`, shared with the simulator. Intraday runs are not graded.
+- **Drift analysis** needs 30 or more graded rows. Each of the 10 thresholds is checked by resampling the winning trades into a bootstrap interval, and a change is proposed only when the configured gate falls outside it. Proposals are written to `threshold_insights`.
+- **Approval** is manual (`python -m scripts.trigger_engine_room`). The graph interrupts before `human_review`, and an approved change rewrites `config/gate_thresholds.py` and prepends to `GATE_THRESHOLDS_HISTORY`.
 
-    User((User)) -->|Input| Router{"LangGraph Router"}
-    
-    subgraph TriLayer ["Tri-Layer Quant Pipeline"]
-        direction TB
-        B["🥉 Bronze Layer<br>(Data Ingestion)"]:::bronze
-        S["🥈 Silver Layer<br>(Vectorized Math)"]:::silver
-        G["🥇 Gold Layer<br>(Hard Gates & Setups)"]:::gold
-        
-        B -->|OHLCV & Fundamentals| S
-        S -->|RSI, ATR, SMAs, CAGR| G
-    end
-    
-    subgraph AI ["LLM Synthesizer"]
-        direction TB
-        Context["Context Builder<br>(Injects Profiles & Math)"]:::base
-        Ollama["Local Ollama<br>(Llama 3 Inference)"]:::base
-        Context --> Ollama
-    end
-    
-    Router -->|If Analysis Intent| TriLayer
-    Router -->|If Chat Intent| AI
-    TriLayer -->|Injects Verdict| Context
-    
-    subgraph DataLayer ["Persistence & Engine Room"]
-        direction LR
-        DB[("Supabase Ledger")]:::base
-        Drift["Drift Analyzer<br>(Statistical Skew)"]:::base
-        Grader["Ledger Grader<br>(Matured Trades)"]:::base
-        
-        DB <--> Grader
-        Grader --> Drift
-    end
-    
-    G -.->|Logs Transaction| DB
-    Ollama -->|Streams Response| User
-```
+### 4. The workspace (`frontend/src/pages/Workspace.tsx`)
 
-## Core Systems Deep Dive
-
-### 1. The Tri-Layer Quant Pipeline
-- **Bronze (Ingestion)**: Handles reliable external API data ingestion with intelligent fallbacks, ensuring structural consistency before downstream processing.
-- **Silver (Mathematics)**: Employs Pandas for highly performant, vectorized statistical analysis. Isolates math (CAGR, RSI, ATR, Moving Averages) entirely from business logic to maintain testability.
-- **Gold (Logic)**: Applies the proprietary business rules and hard gates. Evaluates the Silver metrics against configurable thresholds located in `config/gate_thresholds.py` to yield a strict, non-probabilistic verdict.
-
-### 2. LangGraph Orchestrator
-- **State Machine Routing**: A multi-node Directed Acyclic Graph (DAG) that analyzes user intent and dynamically routes queries between distinct execution paths: News Analysis, Definition Lookups, Portfolio Modeling, or Core Analysis synthesis.
-- **Context Injection & Formatting**: Safeguards the LLM by explicitly injecting real-time Gold and Silver context blocks into the prompt templates, forcing Indian market contextualization and strict "Header: Content" response formatting.
-
-### 3. The Engine Room (Background Evaluation)
-- **Grade Ledger**: Scans `algorithmic_ledger` for matured predictions and scores them against real market highs and lows using the ATR levels the user was actually shown. The live grader and the historical simulator call the same function (`scripts/_grading.py`), so backtest and production outcomes land in one comparable distribution.
-- **Every verdict is scoreable**: bullish calls are judged on reaching target, bearish calls on the drop they warned about, and `MONITOR` on whether a decisive move happened at all. When both levels are touched in one window the tie resolves against the prediction, so the record errs pessimistic rather than flattering.
-- **Drift Analysis & HITL Loop**: Seven of nine thresholds have a drift check. Each resamples the winning trades to build a bootstrap interval and proposes a change only when the configured gate sits outside it. Recalibrations route through the human-in-the-loop interrupt in `engine_room_graph.py` and are recorded in `GATE_THRESHOLDS_HISTORY`.
-
-### 4. Interactive Workspace (Frontend)
-- **SSE Streaming Terminal**: Implements Server-Sent Events to stream tutor tokens from the FastAPI/Ollama backend, with a blinking caret while the stream is open.
-- **Real Data Only**: Renders the active ledger entry as a price-structure ladder (last price against its moving averages and the ATR-derived setup levels), a metric table, gate results, and the written explanation. The client is never sent a price series, so no chart is drawn from one.
+Renders the ledger row the backend returned: a price-structure ladder built from real moving averages and setup levels, a metric table, gate results, and the narrative. The client is never sent a price series, so no chart is drawn. The tutor stays closed until asked for; from `lg` it docks beside the result and can open after each run (a switch in its header turns that off).
 
 ## Technology Stack
 
-- **Frontend**: React 19, TypeScript, Vite, TailwindCSS (no icon, animation, or charting library)
-- **Backend**: Python 3.12+, FastAPI, Uvicorn, Pandas, NumPy
-- **AI & Orchestration**: LangGraph, LangChain; models via Ollama locally (Llama 3.1) or Groq with Gemini failover
-- **Observability**: OpenTelemetry SDK, Arize Phoenix (`telemetry.py`)
-- **Database & Auth**: Supabase (PostgreSQL)
+- **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS 3.4, `react-router-dom` 7, `@supabase/supabase-js`. No icon, animation or charting library.
+- **Backend:** Python 3.12+, FastAPI, Uvicorn, pandas, `slowapi` for rate limiting.
+- **AI and orchestration:** LangGraph, LangChain. Models: `openai/gpt-oss-120b` and `-20b` on Groq, Gemini flash models as failover, Llama 3.1 through Ollama for local use. Router embeddings: Gemini `gemini-embedding-001` (768 dimensions) or Ollama `nomic-embed-text`.
+- **Market data:** `yfinance` for prices, fundamentals and news headlines; `nsepython` for NSE circuit status (often unavailable, see Limitations).
+- **Observability:** OpenTelemetry SDK, OpenInference LangChain instrumentation, any OTLP HTTP collector.
+- **Database and auth:** Supabase (Postgres and GoTrue).
+- **Hosting:** Cloudflare Worker (frontend), Render (backend), GitHub Actions (CI and the Engine Room schedule).
 
 ## Project Structure
 
 ```text
 INVR/
-├── backend/              # Python FastAPI Application
-│   ├── app/              # Core Application Logic
-│   │   ├── api/          # Route definitions (Analytics, Profile, Tutor)
-│   │   ├── guardrails/   # Prompt injection & security guardrails
-│   │   ├── pipeline/     # LangGraph workflows (tutor_graph, engine_room_graph, memory_graph)
-│   │   ├── services/     # Bronze, Silver, Gold, Ledger, Memory, Profile services
-│   │   └── telemetry.py  # OpenTelemetry & Arize Phoenix tracing setup
-│   │   └── prompts.py    # Prompt versions and per-model token ceilings
-│   ├── config/           # Configurable thresholds (gate_thresholds.py)
-│   ├── migrations/       # SQL applied by hand (001_ledger_rls.sql)
-│   ├── scripts/          # The Engine Room, incl. the shared _grading.py rule
-│   └── tests/            # 309 unit tests, no Ollama or network required
-│
-├── frontend/             # React Vite Application
+├── .github/workflows/    # tests.yml (pytest, lockfile drift, Docker build), engine_room.yml (cron)
+├── render.yaml           # Render blueprint for the backend
+├── backend/
+│   ├── main.py           # FastAPI app: telemetry, CORS, limiter, routers, /health
+│   ├── Dockerfile        # python:3.12-slim, non-root, uvicorn on $PORT
+│   ├── app/
+│   │   ├── api/          # deps.py (JWT) and routes: analytics, profile, tutor, horizons, symbols
+│   │   ├── guardrails/   # Input injection patterns, tutor scope gate
+│   │   ├── integrations/ # yfinance and nsepython wrappers
+│   │   ├── pipeline/     # router, tutor_graph, memory_graph, engine_room_graph
+│   │   ├── schemas/      # Pydantic contracts
+│   │   ├── services/     # bronze, silver, gold, grounding, ledger, memory, profile, guardrail, cache
+│   │   ├── tools/        # News headlines for the tutor
+│   │   ├── config.py, llm.py, embeddings.py, prompts.py, rate_limit.py, telemetry.py, orchestrator.py
+│   ├── config/           # gate_thresholds.py (machine-edited by the Engine Room)
+│   ├── migrations/       # 001 to 005, applied by hand
+│   ├── scripts/          # Engine Room and utilities
+│   └── tests/            # 309 unit tests, no network needed
+├── frontend/
+│   ├── wrangler.jsonc    # Cloudflare Worker static-assets deploy
 │   ├── src/
-│   │   ├── components/   # Icons, skeletons, site chrome, analysis primitives
+│   │   ├── components/   # analysis, TutorPanel, SymbolSearch, Horizons, Tour, TickerTape, ...
+│   │   ├── lib/          # Pure logic tested with node --test (horizons, symbols, runFlow, tourSteps)
 │   │   ├── pages/        # Landing, Auth, Onboarding, Workspace, Terms, Privacy
-│   │   ├── context/       # Auth provider and useAuth hook
-│   │   └── index.css     # Design tokens and shared component classes
-│   └── package.json      # Dependencies and scripts
-│
-├── docs/                 # Blueprint, audits, deployment plan, evaluation tracker
-└── .claude/              # Agent rules (incl. the frontend design rules), memory, skills
+│   │   ├── context/      # Auth provider and useAuth
+│   │   └── api.ts        # The one backend origin, apiJson, symbol and horizon calls
+│   └── tests/            # 8 tests on src/lib
+├── docs/                 # Blueprint, audits, deployment plan, evaluation tracker (local only)
+└── .claude/              # Agent rules, memory, skills (local only)
 ```
 
-## Setup & Configuration
+`.gitignore` ignores `*.md`, so only `README.md` is tracked. `CLAUDE.md`, `docs/` and the `.claude/` markdown exist locally unless force-added.
 
-### 1. Configure Environment
+## API
 
-Both directories ship a `.env.example` documenting every variable. Copy it and
-fill in the values:
+All routes except `/` and `/health` need `Authorization: Bearer <Supabase access token>`.
+
+| Route | Purpose | Limit (per user) |
+|---|---|---|
+| `GET /health` | Configuration only: cache, database client, model chain. Never calls Supabase or a model | none |
+| `GET /api/v1/profiles/` | Caller's profile (404 if none) | none |
+| `POST /api/v1/profiles/` | Create or update the profile (201) | none |
+| `POST /api/v1/profiles/tour` | Mark the workspace tour done | none |
+| `POST /api/v1/analytics/process` | Run the pipeline, write the ledger, return `log_id` | 10/min |
+| `POST /api/v1/tutor/chat/stream` | Tutor answer as Server-Sent Events | 30/min |
+| `GET /api/v1/horizons/stock/{ticker}` | Saved horizon for a stock | 120/min |
+| `PUT /api/v1/horizons/stock/{ticker}` | Save the horizon for a stock | 60/min |
+| `GET /api/v1/symbols/search?q=` | NSE ticker suggestions (24 h cache) | 60/min |
+
+Interactive docs are at `/docs` (`/` redirects there).
+
+## Setup
+
+### Prerequisites
+
+- Python 3.12+ and [`uv`](https://docs.astral.sh/uv/) (or `pip`)
+- Node.js ^20.19 or >= 22.12 (Vite 8)
+- A Supabase project with the tables from Appendix B of `docs/master_documentation.md` and the migrations below applied
+- A model provider: Groq and Google API keys, or a local Ollama with `llama3.1` and `nomic-embed-text` pulled
+
+### Install
+
+```bash
+git clone https://github.com/gh0gale/INVR.git
+cd INVR
+
+cd backend
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt  # or: uv sync
+
+cd ../frontend
+npm install
+```
+
+### Configure
+
+Both directories ship a `.env.example` documenting every variable.
 
 ```bash
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
 ```
 
-**Backend (`backend/.env`):**
-```env
-SUPABASE_URL="https://your-project.supabase.co"
-SUPABASE_ANON_KEY="your-anon-key"
-SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
-MARKET_SUFFIX=".NS"
-```
+**Backend (`backend/.env`).** The Supabase trio is required; the app raises at import without it.
 
-**Frontend (`frontend/.env`):**
+| Variable | Default | Purpose |
+|---|---|---|
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | none | Required. The service-role key bypasses RLS and must never reach the browser |
+| `MARKET_SUFFIX` | `.NS` | Appended to bare tickers |
+| `LLM_PROVIDER` | `ollama` | `ollama`, `groq` or `gemini` |
+| `LLM_FALLBACK_PROVIDER` | blank | Blank disables failover. Production uses `gemini` |
+| `GROQ_API_KEY`, `GOOGLE_API_KEY` | blank | Provider keys |
+| `EMBEDDING_PROVIDER` | `ollama` | `ollama` or `gemini`. Must match the committed router centroids |
+| `LLM_MODEL_SYNTHESIS` / `_TUTOR` / `_MEMORY` / `_GUARDRAIL` / `_SCOPE` | blank | Per-task override of the primary model |
+| `OLLAMA_BASE_URL`, `LLM_TIMEOUT_SECONDS`, `EMBEDDING_MODEL` | see `config.py` | Local model server, request timeout, embedding override |
+| `GUARDRAIL_MODE` | `block` | `block` or `log_only` |
+| `ROUTER_MODE`, `ROUTER_CONFIDENCE_THRESHOLD` | `enforce`, `0.45` | Tutor routing |
+| `CORS_ALLOW_ORIGINS` | `http://localhost:5173` | Comma-separated exact origins |
+| `RATE_LIMIT_STORAGE_URI` | `memory://` | Per worker; a Redis URL shares limits |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:6060/v1/traces` | OTLP collector; spans are dropped with a warning if nothing listens |
+| `TEST_USER_EMAIL`, `TEST_USER_PASSWORD` | blank | Only for the live harnesses |
+
+**Frontend (`frontend/.env`).** Baked in at build time.
+
 ```env
 VITE_SUPABASE_URL="https://your-project.supabase.co"
 VITE_SUPABASE_ANON_KEY="your-anon-key"
 VITE_API_BASE_URL="http://localhost:8000"
+VITE_SITE_URL="http://localhost:5173"   # only for absolute og:image / og:url in index.html
 ```
 
-### 2. Start Services
+### Apply the database migrations
 
-**Terminal 1 (Backend):**
-```bash
-cd backend
-uvicorn main:app --reload --port 8000
-```
-
-**Terminal 2 (Frontend):**
-```bash
-cd frontend
-npm run dev
-```
-The application will be available at `http://localhost:5173`.
-
-### 3. Apply the database policy
+Migrations are applied by hand (Supabase SQL editor, or `supabase db execute -f <file>`). They are required before anyone else uses an instance.
 
 ```bash
-supabase db execute -f backend/migrations/001_ledger_rls.sql
-```
-
-This is not optional before anyone else uses the instance. It leaves reads open
-(ledger rows describe securities and carry no user identifier) and revokes every
-client-side write, protecting the prediction history the grading loop depends on.
-
-## Testing & Maintenance
-
-### Run the test suite
-
-309 tests covering the Gold verdict logic, ATR trade-setup arithmetic, prompt
-interpolation, the shared grading rule, ledger versioning and the drift
-statistics, that persisted values fit their columns, that one account's analysis
-history stays its own, that fundamental ratios are normalised to the unit their
-threshold uses, that no configured threshold is left unread by any gate, that
-model-provider failover reaches the fallback (including mid-stream), that rate
-limits are per account rather than per address, that no gate scores data that
-was never fetched, that the tutor's scope boundary is a rule, and that the
-figures in a narrative are checked against the engine's.
-None of them need Ollama, Supabase, an API key or a network connection.
-
-```bash
-cd backend
-pytest tests/                        # all 309, about 20 seconds
-python -m scripts.data_coverage      # real market data: which gates actually ran
-pytest tests/test_gold_gates.py -v   # one file
-```
-
-They also run automatically on every push and pull request touching `backend/`
-via `.github/workflows/tests.yml`.
-
-### Apply the database policies
-
-These migrations must be run by hand against a new deployment. On the current
-database they are already applied.
-
-```bash
-# Supabase SQL editor, or:
 supabase db execute -f backend/migrations/001_ledger_rls.sql
 supabase db execute -f backend/migrations/003_user_scoped_history.sql
 supabase db execute -f backend/migrations/004_watchlists.sql
 supabase db execute -f backend/migrations/005_horizons_and_tour.sql
 ```
 
-**001** revokes client writes on `algorithmic_ledger`. Without it the browser
-can delete rows from the shared record the Engine Room grades against.
+- **001** revokes client writes on `algorithmic_ledger` and `prediction_interactions`. Without it the browser can delete the record the Engine Room grades against.
+- **002** is optional and only widens `profile_version_hash`.
+- **003** adds `prediction_interactions.user_id` and enables RLS on `chat_sessions` and `user_profiles`. Without it the anon key can read every user's conversations and capital.
+- **004** creates `watchlists`. Without it the star button fails and the list stays empty.
+- **005** adds `user_profiles.tour_completed_at` and the `stock_horizons` table. Without it every stock opens on the onboarding horizon and the tour shows on every visit.
 
-**002** is optional and only normalises a column width — see the file.
+Which migrations are applied on the live database cannot be determined from the repository. `docs/deployment_plan.md` and `.claude/memory/INDEX.md` record what was last confirmed.
 
-**003** adds `prediction_interactions.user_id` and enables row-level security on
-`chat_sessions` and `user_profiles`. Without it the anon key that ships in the
-browser bundle can read every user's conversation text and capital amount, and
-the workspace cannot tell one account's analysis history from another's.
+### Run
 
-**004** creates the `watchlists` table. Without it the star button in the
-workspace logs an error and the list stays empty.
+```bash
+# Terminal 1
+cd backend && uvicorn main:app --reload --port 8000     # http://localhost:8000 (/docs)
 
-**005** adds `user_profiles.tour_completed_at` (the first-login workspace tour)
-and the `stock_horizons` table, which remembers the horizon (intraday, swing,
-positional or long term) each user last ran each stock on. Without it every
-stock opens on the onboarding horizon and the tour shows on every visit. The backend serves them at `/api/v1/horizons` and
-`/api/v1/profiles/tour`; ticker suggestions come from `/api/v1/symbols/search`
-(Yahoo search through yfinance, NSE only, no key).
+# Terminal 2
+cd frontend && npm run dev                              # http://localhost:5173
+```
 
-### Verify the whole system end to end
-
-With the server running, a model provider available (Ollama locally, or Groq /
-Gemini keys in `.env`) and the migrations applied:
+## Testing
 
 ```bash
 cd backend
-python e2e_verify.py
-INVR_API_BASE=https://<app>.onrender.com python e2e_verify.py   # against a deployment
+pytest tests/ -q                       # 309 tests, about 15 to 20 seconds
+pytest tests/test_gold_gates.py -v     # one file
+
+cd ../frontend
+npm test                               # node --test on src/lib (8 tests)
+npm run lint
+npm run build                          # tsc -b && vite build
 ```
 
-It drives the live stack - real auth, real pipeline, real Supabase, the real
-model provider, real yfinance - and prints PASS or FAIL for each shipped feature
-with the evidence it used. 35 checks. This is the check that found four defects
-the unit suite could not see.
+The backend suite needs no Ollama, Supabase, API key or network. It covers the Gold verdict logic, trade-setup arithmetic, prompt rendering, the shared grading rule, ledger versioning, drift statistics, per-user history isolation, unit normalisation of fundamentals, provider failover (including mid-stream), per-account rate limits, the tutor scope gate, narrative grounding, the horizon and tour endpoints, and symbol search. `.github/workflows/tests.yml` runs it on pushes to `main` and pull requests touching `backend/`, alongside a lockfile drift check and a Docker build.
 
-What is done and what is left, phase by phase, is tracked in
-`docs/system_evaluation_prompt.md`.
+Live checks (not pytest), run from `backend/` with a server, a model provider and the migrations in place:
 
-### Deploy
+```bash
+python e2e_verify.py                                              # 35 checks
+INVR_API_BASE=https://<app>.onrender.com python e2e_verify.py     # against a deployment
+python -m scripts.check_llm            # one request per task to each configured provider
+python -m scripts.data_coverage        # live yfinance: which gates actually ran
+```
 
-The zero-cost deployment (Cloudflare Workers static assets, Render, Supabase, Groq with Gemini
-failover) and every manual step it needs are in `docs/deployment_plan.md`. The
-backend ships as `backend/Dockerfile`, described for Render by `render.yaml`.
+## Deployment
 
-### Evaluate system drift
+### Frontend: Cloudflare Worker with static assets
 
-The Engine Room grades past predictions and looks for thresholds the evidence no
-longer supports. A change is proposed only when the configured gate falls
-outside a bootstrap interval of what winning trades actually did.
+`frontend/wrangler.jsonc` defines a Worker named `invr` with no script, serving `./dist/` as assets with `not_found_handling: "single-page-application"` so deep links such as `/workspace` survive a refresh. It is not a Cloudflare Pages project. Workers Builds runs the build and then `npx -y wrangler@4 deploy` from `frontend/`.
+
+- Set root directory `frontend`.
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL` and `VITE_SITE_URL` must be **build** variables, not runtime ones.
+- Do not add `public/_redirects`; Cloudflare rejects its SPA rule as an infinite loop.
+
+### Backend: Render web service (Docker)
+
+`render.yaml` defines the service `invr-api`: Docker runtime, free plan, Singapore region, health check `/health`, and `autoDeployTrigger: checksPass`, so a deploy waits for the GitHub checks. Docker paths are `./backend/Dockerfile` and `./backend` with no `rootDir`. The container runs as a non-root user with `uvicorn main:app --host 0.0.0.0 --port ${PORT} --workers ${WEB_CONCURRENCY}`.
+
+| Variable | Where |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GROQ_API_KEY`, `GOOGLE_API_KEY`, `CORS_ALLOW_ORIGINS` | Entered in the Render dashboard (`sync: false`) |
+| `LLM_PROVIDER=groq`, `LLM_FALLBACK_PROVIDER=gemini`, `EMBEDDING_PROVIDER=gemini`, `GUARDRAIL_MODE=block`, `ROUTER_MODE=enforce`, `WEB_CONCURRENCY=1` | Fixed in `render.yaml` |
+
+`CORS_ALLOW_ORIGINS` must be the frontend's exact origin (no trailing slash). The free instance sleeps after 15 idle minutes, so the frontend pings `/health` on load to wake it. No OTLP endpoint is set in `render.yaml`, so in production the trace exporter targets localhost and its batches fail with a logged error; making it switchable is open work.
+
+Full steps and status are in `docs/deployment_plan.md`.
+
+### Engine Room schedule
+
+`.github/workflows/engine_room.yml` runs the grader daily at 23:00 UTC and the drift analyzer on Sundays at 06:00 UTC. It needs the `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` repository secrets.
+
+## Engine Room commands
 
 ```bash
 cd backend
-python -m scripts.grade_ledger        # score matured predictions against real prices
-python -m scripts.analyze_drift       # propose threshold changes, with intervals
-python -m scripts.trigger_engine_room # human-in-the-loop approval
+python -m scripts.grade_ledger           # score matured predictions against real prices
+python -m scripts.analyze_drift          # propose threshold changes, with intervals
+python -m scripts.trigger_engine_room    # interactive approval; rewrites gate_thresholds.py
+python -m scripts.simulate_live_history  # bootstrap the ledger with backdated swing predictions
+python -m scripts.analyze_and_chat       # run pipeline and tutor from the terminal
+python -m scripts.build_centroids        # after editing the router's category descriptions
 ```
 
-### Versioning the ruleset
+`PIPELINE_VERSION` is `RULESET_VERSION` plus a short SHA-256 fingerprint of `GATE_THRESHOLDS`, so editing a threshold creates a new version automatically and predictions made under different rules are never graded as one cohort. Bump `RULESET_VERSION` by hand only for logic a threshold cannot express, such as a new gate or a changed override.
 
-`PIPELINE_VERSION` is `RULESET_VERSION` plus a SHA-256 fingerprint of
-`GATE_THRESHOLDS`. Editing any threshold produces a new version automatically,
-so predictions made under different rules are never graded as one cohort. Bump
-`RULESET_VERSION` by hand only for logic changes a threshold cannot express,
-such as adding a gate or changing an override.
+## Current implementation status
 
-## What Makes INVR Stand Out
+**Implemented:** everything described above, including the four-horizon pipeline, the tutor, per-user history, watchlist, per-stock horizons, NSE symbol search, the workspace tour, the Engine Room, hosted-model failover and the Render and Cloudflare deployment files.
 
-1. **Deterministic Foundations** - AI is strictly used for synthesis and interaction; core financial verdicts are derived from hard, vectorized mathematics rather than opaque LLM inferences.
-2. **Self-Evaluating** - The Engine Room grades the system's own past predictions, automatically highlighting drift and closing the feedback loop on algorithmic accuracy.
-3. **Legible UI** - A trading-terminal design system: figures set in monospace so columns align, colour reserved for direction and verdict meaning, and every async surface carrying a real loading state. Motion is limited to what reports something, and each animation is documented against the fact it conveys in `.claude/rules/frontend.md`.
-4. **Contextually Aware** - The LangGraph-powered AI Tutor remembers your financial goals, risk profile, and the mathematical reality of the active asset being analyzed.
+**Limitations:**
 
+- **Data source.** Prices, fundamentals and headlines come from Yahoo Finance through `yfinance`, an unofficial and unauthenticated source that can change or throttle.
+- **NSE circuit status** is usually unavailable, because NSE returns empty quotes to scripted clients. The circuit gate is then skipped, not scored.
+- **Institutional flow and sector P/E** have no working free source. Those fields are always `None` and no gate scores them.
+- **Intraday** runs have no grading horizon, so they never enter the Engine Room's record.
+- **Coverage** is NSE equities only. BSE symbols are not supported.
+- **Session clock** knows regular NSE hours (09:15 to 15:30 IST, weekdays) but not exchange holidays.
+- **Rate limits** use per-worker memory storage; multi-instance deployments need `RATE_LIMIT_STORAGE_URI` pointed at a shared store. There is no per-user daily model quota yet.
+- **Ruleset.** The Gold layer reduces about 28 Silver metrics to 5 or 6 pass/fail gates per horizon (open finding OBS-01).
+
+**Planned, not implemented:** Zerodha Kite Connect, Monte Carlo and inflation-adjusted projections, a shared cache, a background inference queue, an MCP server, and a switchable trace exporter for production.
+
+Phase and backlog status is tracked in `docs/system_evaluation_prompt.md`; open findings in `docs/audit_report.md`.
 
 ## License
 
-MIT License - see LICENSE file
-
----
-
-**Built for the Intelligent Investor**
-
-Start managing your portfolio with algorithmic precision today with INVR.
+No `LICENSE` file is committed to the repository. An earlier version of this README named the MIT license; add a `LICENSE` file to make a license binding.
