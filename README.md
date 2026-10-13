@@ -91,7 +91,7 @@ flowchart LR
     classDef engine fill:#7f1d1d,stroke:#ef4444,color:#fff;
     classDef ext fill:#1e293b,stroke:#475569,color:#fff;
 
-    Client["React / Vite SPA<br>(Cloudflare Worker, static assets)"]:::frontend
+    Client["React / Vite SPA<br>(Vercel, static build)"]:::frontend
 
     subgraph Render["Render web service (Docker)"]
         API["FastAPI"]:::backend
@@ -175,7 +175,7 @@ Renders the ledger row the backend returned: a price-structure ladder built from
 - **Market data:** `yfinance` for prices, fundamentals and news headlines; `nsepython` for NSE circuit status (often unavailable, see Limitations).
 - **Observability:** OpenTelemetry SDK, OpenInference LangChain instrumentation, any OTLP HTTP collector.
 - **Database and auth:** Supabase (Postgres and GoTrue).
-- **Hosting:** Cloudflare Worker (frontend), Render (backend), GitHub Actions (CI and the Engine Room schedule).
+- **Hosting:** Vercel (frontend), Render (backend), GitHub Actions (CI and the Engine Room schedule).
 
 ## Project Structure
 
@@ -198,9 +198,9 @@ INVR/
 │   ├── config/           # gate_thresholds.py (machine-edited by the Engine Room)
 │   ├── migrations/       # 001 to 005, applied by hand
 │   ├── scripts/          # Engine Room and utilities
-│   └── tests/            # 309 unit tests, no network needed
+│   └── tests/            # 374 unit tests, no network needed
 ├── frontend/
-│   ├── wrangler.jsonc    # Cloudflare Worker static-assets deploy
+│   ├── vercel.json       # SPA rewrite for the Vercel deploy
 │   ├── src/
 │   │   ├── components/   # analysis, TutorPanel, SymbolSearch, Horizons, Tour, TickerTape, ...
 │   │   ├── lib/          # Pure logic tested with node --test (horizons, symbols, runFlow, tourSteps)
@@ -326,7 +326,7 @@ cd frontend && npm run dev                              # http://localhost:5173
 
 ```bash
 cd backend
-pytest tests/ -q                       # 309 tests, about 15 to 20 seconds
+pytest tests/ -q                       # 374 tests
 pytest tests/test_gold_gates.py -v     # one file
 
 cd ../frontend
@@ -348,13 +348,12 @@ python -m scripts.data_coverage        # live yfinance: which gates actually ran
 
 ## Deployment
 
-### Frontend: Cloudflare Worker with static assets
+### Frontend: Vercel (static Vite build)
 
-`frontend/wrangler.jsonc` defines a Worker named `invr` with no script, serving `./dist/` as assets with `not_found_handling: "single-page-application"` so deep links such as `/workspace` survive a refresh. It is not a Cloudflare Pages project. Workers Builds runs the build and then `npx -y wrangler@4 deploy` from `frontend/`.
+`frontend/vercel.json` rewrites every path to `/index.html` so deep links such as `/workspace` survive a refresh. Vercel serves real files first, so assets still resolve.
 
-- Set root directory `frontend`.
-- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL` and `VITE_SITE_URL` must be **build** variables, not runtime ones.
-- Do not add `public/_redirects`; Cloudflare rejects its SPA rule as an infinite loop.
+- Set root directory `frontend`, framework preset Vite, build `npm run build`, output `dist`.
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL` and `VITE_SITE_URL` are baked in at build time. Redeploy after changing one.
 
 ### Backend: Render web service (Docker)
 
@@ -389,7 +388,7 @@ python -m scripts.build_centroids        # after editing the router's category d
 
 ## Current implementation status
 
-**Implemented:** everything described above, including the four-horizon pipeline, the tutor, per-user history, watchlist, per-stock horizons, NSE symbol search, the workspace tour, the Engine Room, hosted-model failover and the Render and Cloudflare deployment files.
+**Implemented:** everything described above, including the four-horizon pipeline, the tutor, per-user history, watchlist, per-stock horizons, NSE symbol search, the workspace tour, the Engine Room, hosted-model failover and the Render and Vercel deployment files.
 
 **Limitations:**
 

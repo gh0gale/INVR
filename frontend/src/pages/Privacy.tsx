@@ -128,7 +128,7 @@ export default function Privacy() {
         <p>
           Supabase provides authentication and the database. Groq and Google provide the
           language models described in section 04. The backend runs on Render and this website
-          is served by Cloudflare; both handle your requests and see connection details such as
+          is served by Vercel; both handle your requests and see connection details such as
           your IP address. Market data is retrieved from public financial data sources, which
           receive the ticker being requested but nothing about you. Web fonts are served by
           Google Fonts, which receives your IP address as part of that request.

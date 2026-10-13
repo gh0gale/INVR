@@ -31,7 +31,7 @@ services:
         sync: false
       - key: GOOGLE_API_KEY
         sync: false
-      # Your Cloudflare Pages URL, e.g. https://invr.pages.dev
+      # Your Vercel URL, e.g. https://invr.vercel.app
       - key: CORS_ALLOW_ORIGINS
         sync: false
       # --- configuration
