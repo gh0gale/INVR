@@ -19,6 +19,10 @@ class AnalysisState(TypedDict):
     bronze: Optional[BronzePayload]
     silver: Optional[SilverMetrics]
     gold: Optional[VerdictDraft]
+    # v2 engine result, recorded beside v1 and never shown or narrated
+    # (docs/verdict_engine_plan.md, Phase 2). Kept out of `gold` so the
+    # grounding check does not accept v2 figures in the v1 narrative.
+    shadow_v2: Optional[Dict[str, Any]]
     
     # Final Output
     llm_output: Optional[Dict[str, Any]]

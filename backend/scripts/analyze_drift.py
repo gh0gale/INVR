@@ -27,6 +27,7 @@ from supabase import create_client
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.gate_thresholds import GATE_THRESHOLDS as TH
+from app.services.ledger_service import RULESET_VERSION
 from scripts._log import get_logger
 
 logger = get_logger(__name__)
@@ -141,6 +142,11 @@ def analyze_system_drift():
     logs = (
         supabase.table("algorithmic_ledger")
         .select("timeframe, actual_outcome, silver_state, pipeline_version")
+        # Only the current ruleset: verdicts made under different logic are not
+        # one population (docs/verdict_engine_plan.md). Threshold fingerprints
+        # within a ruleset are pooled, or every approved change would reset the
+        # sample to zero.
+        .like("pipeline_version", f"{RULESET_VERSION}-%")
         .neq("actual_outcome", "PENDING")
         .neq("actual_outcome", "DRAW")
         .execute()

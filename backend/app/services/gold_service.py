@@ -2,6 +2,28 @@ from app.schemas.silver import SilverMetrics
 from app.schemas.gold import VerdictDraft, TradeSetup
 from config.gate_thresholds import GATE_THRESHOLDS as TH
 
+
+def atr_levels(price: float, atr: float, tf: str) -> dict:
+    """Entry zone, stop, targets and R:R from ATR. Shared by v1 and the v2 scorer.
+
+    Intraday uses tighter multipliers than swing and positional.
+    """
+    stop_mult = 1.5 if tf == "intraday" else 2.0
+    t1_mult = 2.5 if tf == "intraday" else 3.0
+    t2_mult = 4.0 if tf == "intraday" else 5.0
+    stop_loss = price - stop_mult * atr
+    t1 = price + t1_mult * atr
+    risk_distance = max(price - stop_loss, 0.01)
+    return {
+        "entry_zone_low": round(price - 0.5 * atr, 2),
+        "entry_zone_high": round(price + 0.5 * atr, 2),
+        "stop_loss": round(stop_loss, 2),
+        "target_1": round(t1, 2),
+        "target_2": round(price + t2_mult * atr, 2),
+        "risk_reward_ratio": round((t1 - price) / risk_distance, 2),
+    }
+
+
 def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_capital: float = 100000.0) -> VerdictDraft:
     # Position sizing multiplies this figure, so a negative or NaN value would
     # produce a negative share count presented as a trade instruction. The
@@ -301,36 +323,17 @@ def evaluate_hard_gates(silver: SilverMetrics, circuit_status: str, available_ca
         and silver.atr_14
         and available_capital > 0
     ):
-        p = silver.current_price
-        atr = silver.atr_14
-        
-        # Intraday requires tighter risk multipliers than Swing/Positional
-        stop_mult = 1.5 if tf == "intraday" else 2.0
-        t1_mult = 2.5 if tf == "intraday" else 3.0
-        t2_mult = 4.0 if tf == "intraday" else 5.0
-        
-        entry_low = p - (0.5 * atr)
-        entry_high = p + (0.5 * atr)
-        stop_loss = p - (stop_mult * atr)
-        t1 = p + (t1_mult * atr)
-        t2 = p + (t2_mult * atr)
-        
+        levels = atr_levels(silver.current_price, silver.atr_14, tf)
+
         # Risk Sizing: (Capital * 2% risk) / (Entry - Stop Loss)
         risk_per_trade = available_capital * 0.02
-        risk_distance = max(p - stop_loss, 0.01) # Avoid div by zero
+        risk_distance = max(silver.current_price - levels["stop_loss"], 0.01) # Avoid div by zero
         position_size = int(risk_per_trade / risk_distance)
-        
-        rr_ratio = (t1 - p) / risk_distance
-        
+
         trade_setup = TradeSetup(
-            entry_zone_low=round(entry_low, 2),
-            entry_zone_high=round(entry_high, 2),
-            stop_loss=round(stop_loss, 2),
-            target_1=round(t1, 2),
-            target_2=round(t2, 2),
+            **levels,
             suggested_position_size=position_size,
             risk_per_trade_inr=risk_per_trade,
-            risk_reward_ratio=round(rr_ratio, 2)
         )
 
     return VerdictDraft(

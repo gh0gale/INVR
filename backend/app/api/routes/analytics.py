@@ -41,6 +41,7 @@ async def process_pipeline(request: Request, payload: PipelineRequest, user_id: 
             "bronze": None,
             "silver": None,
             "gold": None,
+            "shadow_v2": None,
             "llm_output": None,
             "errors": [],
             "retry_count": 0,
@@ -97,6 +98,8 @@ async def process_pipeline(request: Request, payload: PipelineRequest, user_id: 
 
             silver_data = final_state["silver"].model_dump() if hasattr(final_state["silver"], "model_dump") else final_state["silver"]
             gold_data = final_state["gold"].model_dump() if hasattr(final_state["gold"], "model_dump") else final_state["gold"]
+            if final_state.get("shadow_v2"):
+                gold_data = {**gold_data, "shadow_v2": final_state["shadow_v2"]}
 
             session_id = getattr(payload, "session_id", "analytics-api-execution")
 

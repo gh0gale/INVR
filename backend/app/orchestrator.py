@@ -18,6 +18,7 @@ from app.llm import Task, get_chat_model, message_text, model_identity, respondi
 from app.services.bronze_service import build_bronze_payload
 from app.services.silver_service import compute_silver_metrics
 from app.services.gold_service import evaluate_hard_gates
+from app.services.scoring_service import score_v2
 from app.services.cache_service import get_cached_dict, set_cached_dict
 from app.services.grounding_service import score_grounding
 
@@ -66,11 +67,19 @@ async def quant_engine_node(state: AnalysisState) -> AnalysisState:
                 circuit_status,
                 available_capital
             )
-            return {"silver": silver, "gold": gold}
+            return {"silver": silver, "gold": gold, "shadow_v2": _shadow_v2(silver, circuit_status)}
         except Exception as e:
             span.record_exception(e)
             logger.error("Quant Engine Error for %s: %s", state.get('ticker'), str(e), exc_info=True)
             return {"errors": [f"Quant Engine Error: {str(e)}"]}
+
+def _shadow_v2(silver, circuit_status: str):
+    """v2 score for the ledger, or None. A v2 fault must never fail a v1 response."""
+    try:
+        return score_v2(silver, circuit_status).model_dump()
+    except Exception as e:
+        logger.warning("Shadow v2 scoring failed for %s: %s", getattr(silver, "ticker", "?"), e)
+        return None
 
 # ==========================================
 # HELPERS: CoT & Safe Access
