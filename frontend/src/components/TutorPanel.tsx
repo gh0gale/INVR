@@ -9,10 +9,10 @@
  * an overlay drawer, closed by Escape, its close control or a click on the
  * analysis behind it, because two columns on a phone squeeze both.
  *
- * The composer is a real editor rather than a bare text box. It states what it
- * accepts, shows the submit keys, grows with the message, disables its own
- * send button when there is nothing to send, and says plainly which analysis
- * is in context so an answer is never mistaken for a general one.
+ * The composer is one compact row: a textarea that grows with the message up to
+ * a few lines, and a send button disabled while there is nothing to send. It
+ * once carried a label, key hints and a footnote and took a quarter of the
+ * panel. The header says which analysis is in context.
  */
 import React, { useEffect, useRef } from 'react';
 import { SkeletonLine } from './Skeleton';
@@ -215,22 +215,22 @@ export const TutorPanel: React.FC<{
         <div ref={logEndRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="shrink-0 border-t border-rule bg-term-950 px-5 py-4">
-        <label htmlFor="tutor-input" className="label mb-2 block">
+      <form onSubmit={handleSubmit} className="shrink-0 border-t border-rule bg-term-950 px-5 py-3">
+        <label htmlFor="tutor-input" className="sr-only">
           Ask a question, or enter a ticker to analyse
         </label>
 
-        <div className="control flex flex-col gap-2 p-2.5">
+        <div className="control flex items-end gap-2 p-1.5 pl-3">
           <textarea
             id="tutor-input"
             ref={composerRef}
-            rows={2}
+            rows={1}
             value={command}
             onChange={(e) => {
               setCommand(e.target.value);
               const el = e.currentTarget;
               el.style.height = 'auto';
-              el.style.height = Math.min(el.scrollHeight, 168) + 'px';
+              el.style.height = Math.min(el.scrollHeight, 112) + 'px';
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -242,33 +242,20 @@ export const TutorPanel: React.FC<{
               isProcessing
                 ? 'Waiting for the engine'
                 : activeItem
-                  ? 'Why did this gate fail?'
+                  ? 'Ask a question, or enter a ticker'
                   : 'What does ATR measure?'
             }
             disabled={isProcessing}
-            className="w-full resize-none bg-transparent text-base leading-relaxed outline-none placeholder:text-fg-3 disabled:opacity-60"
+            className="min-w-0 flex-1 resize-none bg-transparent py-2 text-base leading-snug outline-none placeholder:text-fg-3 disabled:opacity-60"
           />
-
-          <div className="flex items-center justify-between gap-3 border-t border-rule pt-2.5">
-            {/* The key hint is for a keyboard. On a phone it only took room. */}
-            <p className="hidden text-2xs text-fg-3 sm:block">
-              <span className="kbd">Enter</span> sends, <span className="kbd">Shift</span> +{' '}
-              <span className="kbd">Enter</span> adds a line
-            </p>
-            <button
-              type="submit"
-              disabled={isProcessing || !command.trim()}
-              className="btn-primary ml-auto shrink-0"
-            >
-              Send
-            </button>
-          </div>
+          <button
+            type="submit"
+            disabled={isProcessing || !command.trim()}
+            className="btn-primary shrink-0"
+          >
+            Send
+          </button>
         </div>
-
-        <p className="mt-2.5 text-2xs leading-relaxed text-fg-3">
-          A bare ticker, or <span className="num text-fg-2">/analyze TICKER</span>, runs the
-          pipeline instead of asking the tutor.
-        </p>
       </form>
       </aside>
     </>

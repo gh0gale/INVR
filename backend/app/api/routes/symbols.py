@@ -1,6 +1,6 @@
 """NSE symbol search for the workspace ticker autocomplete.
 
-Provider: Yahoo Finance search through `yfinance.Search`. The pipeline already
+Provider: Yahoo Finance search (the endpoint behind `yfinance.Search`, called with region=IN). The pipeline already
 fetches every price and fundamental from Yahoo through yfinance, so a symbol
 Yahoo lists under NSE is by construction one the pipeline can run, and this adds
 no key and no new failure mode. Alpha Vantage (25 requests/day free), Finnhub and
@@ -15,9 +15,9 @@ import hashlib
 import logging
 import re
 
-import yfinance as yf
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+from yfinance.data import YfData
 
 from app.api.deps import get_current_user_id
 from app.rate_limit import limiter
@@ -62,8 +62,21 @@ def to_suggestions(quotes: list[dict]) -> list[Suggestion]:
     return out
 
 
+SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
+
+
 def _search(query: str) -> list[dict]:
-    return yf.Search(query, max_results=20, news_count=0, timeout=PROVIDER_TIMEOUT_SECONDS).quotes
+    # region=IN is what makes a short prefix ("mar", "ta") rank Indian listings:
+    # without it Yahoo ranks globally, returns about 5 hits, and none are NSE.
+    # yf.Search has no region argument, so this goes through yfinance's own
+    # session (cookies, rate handling) instead of a new HTTP dependency.
+    resp = YfData().cache_get(
+        url=SEARCH_URL,
+        params={"q": query, "quotesCount": 20, "newsCount": 0, "listsCount": 0,
+                "enableCb": False, "region": "IN", "lang": "en-IN"},
+        timeout=PROVIDER_TIMEOUT_SECONDS,
+    )
+    return resp.json().get("quotes", [])
 
 
 @router.get("/search", response_model=list[Suggestion])
@@ -77,7 +90,7 @@ async def search_symbols(
     if not QUERY_RE.match(query):
         raise HTTPException(status_code=422, detail="Use letters, numbers, spaces, '.', '&' or '-'.")
 
-    key = "symbols_" + hashlib.sha256(query.encode()).hexdigest()[:24]
+    key = "symbols_in_" + hashlib.sha256(query.encode()).hexdigest()[:24]
     cached = await get_cached_dict(key, CACHE_TTL_SECONDS)
     if cached is not None:
         return cached["items"]

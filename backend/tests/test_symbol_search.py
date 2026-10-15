@@ -61,6 +61,23 @@ class TestMapping:
         assert len(symbols.to_suggestions(many)) == symbols.MAX_RESULTS
 
 
+class TestProviderCall:
+    def test_search_asks_yahoo_for_indian_results(self, monkeypatch):
+        seen = {}
+
+        class _Resp:
+            def json(self):
+                return {"quotes": QUOTES}
+
+        def fake_get(self, url, params, timeout):
+            seen.update(params)
+            return _Resp()
+
+        monkeypatch.setattr(symbols.YfData, "cache_get", fake_get)
+        assert symbols._search("mar") == QUOTES
+        assert seen["region"] == "IN" and seen["q"] == "mar"
+
+
 class TestRoute:
     def test_search_returns_mapped_suggestions(self, client, monkeypatch):
         monkeypatch.setattr(symbols, "_search", lambda q: QUOTES)

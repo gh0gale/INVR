@@ -122,7 +122,7 @@ flowchart LR
 - **Deterministic verdict and confidence.** Confidence is a weighted gate-pass ratio mapped onto 50 to 95. After the model's JSON is parsed, verdict and confidence are overwritten from Gold, and the figures in the narrative are scored against the engine's.
 - **ATR trade setup.** Entry zone, stop and target from Average True Range, with position size limited to 2% risk and clamped to the user's capital. Long-term runs have no setup.
 - **Streaming tutor.** A LangGraph agent with a deterministic scope gate, an embedding router (definition, portfolio, scenario, news, fallback), an optional news tool and per-session memory.
-- **NSE ticker search.** The header field is an autocomplete over `/api/v1/symbols/search` (Yahoo search through `yfinance`, NSE equities only). Only a searched symbol is ever run.
+- **NSE ticker search.** The header field is an autocomplete over `/api/v1/symbols/search` (Yahoo search with `region=IN`, NSE equities only). Only a searched symbol is ever run.
 - **Watchlist and history per user.** Both are stored in Supabase and protected by row-level security.
 - **First-login workspace tour.** Completion is stored on the profile, so another device does not replay it.
 - **Engine Room.** A daily grader scores matured predictions against real highs and lows, a weekly drift analyzer proposes threshold changes from bootstrap intervals, and a human approves any change through a LangGraph interrupt.
@@ -198,7 +198,7 @@ INVR/
 │   ├── config/           # gate_thresholds.py (machine-edited by the Engine Room)
 │   ├── migrations/       # 001 to 005, applied by hand
 │   ├── scripts/          # Engine Room and utilities
-│   └── tests/            # 363 unit tests, no network needed
+│   └── tests/            # 364 unit tests, no network needed
 ├── frontend/
 │   ├── vercel.json       # SPA rewrite for the Vercel deploy
 │   ├── src/
@@ -326,7 +326,7 @@ cd frontend && npm run dev                              # http://localhost:5173
 
 ```bash
 cd backend
-pytest tests/ -q                       # 363 tests
+pytest tests/ -q                       # 364 tests
 pytest tests/test_gold_gates.py -v     # one file
 
 cd ../frontend
