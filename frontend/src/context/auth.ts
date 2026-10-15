@@ -6,7 +6,6 @@ export interface UserProfile {
   id: string;
   experience: string;
   goal: string;
-  timeframe: string;
   risk: string;
   portfolio: Record<string, number>;
   capital: number;

@@ -71,11 +71,6 @@ def test_dividend_goal_never_claims_dividends():
     assert notes == ["Dividend data is not part of this analysis. Check the payout record before relying on income."]
 
 
-def test_horizon_mismatch_is_noted():
-    assert "long term" in _plan(timeframe="long_term").horizon_note
-    assert _plan(timeframe="swing").horizon_note is None
-
-
 def test_watch_depth_follows_experience():
     assert len(_plan(experience="beginner").what_to_watch) == 3
     assert len(_plan(experience="advanced").what_to_watch) == 8

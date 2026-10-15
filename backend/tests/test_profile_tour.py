@@ -14,7 +14,6 @@ ROW = {
     "id": "alice",
     "experience": "beginner",
     "goal": "wealth_growth",
-    "timeframe": "swing",
     "risk": "moderate",
     "portfolio": {},
     "capital": 100000.0,
@@ -69,10 +68,17 @@ def test_completing_twice_keeps_the_first_stamp(client, db):
 def test_resaving_the_profile_does_not_replay_the_tour(client, db):
     client.post("/p/tour", headers=AUTH)
     req = UserProfileRequest(
-        experience="advanced", goal="wealth_growth", timeframe="swing", risk="moderate", portfolio={}, capital=5.0
+        experience="advanced", goal="wealth_growth", risk="moderate", portfolio={}, capital=5.0
     )
     profile_service.create_and_store_profile("alice", req)
     assert db.tables["user_profiles"][0]["tour_completed_at"] is not None
+
+
+def test_profile_save_sends_no_timeframe(db):
+    """The horizon is chosen per run in the workspace, never stored on the profile."""
+    req = UserProfileRequest(experience="advanced", goal="wealth_growth", risk="moderate", portfolio={}, capital=5.0)
+    profile_service.create_and_store_profile("alice", req)
+    assert "timeframe" not in db.tables["user_profiles"][0]
 
 
 def test_unknown_profile_is_404(client):

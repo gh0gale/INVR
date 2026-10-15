@@ -10,7 +10,7 @@ export const WORKSPACE_TOUR: TourStep[] = [
   {
     target: 'horizon-select',
     title: 'Choose a horizon',
-    body: 'Intraday, swing, positional or long-term. It sets the data fetched and the gates applied, and each stock remembers the horizon you last ran it on.',
+    body: 'Intraday, swing, positional or long-term. It sets the data fetched and the gates applied. Pick it before you press Analyse; it applies to every run until you change it.',
   },
   {
     target: 'analyse',

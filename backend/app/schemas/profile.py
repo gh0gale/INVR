@@ -12,7 +12,6 @@ HASH_LENGTH = 32
 class UserProfileRequest(BaseModel):
     experience: Literal["beginner", "intermediate", "advanced"]
     goal: Literal["wealth_growth", "dividend_income", "capital_preservation"]
-    timeframe: Literal["intraday", "swing", "positional", "long_term"]
     risk: Literal["conservative", "moderate", "aggressive"]
     portfolio: Dict[str, float] = Field(..., description="Asset class allocations mapping")
     capital: float = Field(..., ge=0, description="Capital in INR")

@@ -189,27 +189,31 @@ export const TutorPanel: React.FC<{
           </div>
         )}
 
+        {/*
+          Starters sit in the scrolling transcript, below the last message. As a
+          pinned footer they took most of the panel and hid the run's result.
+          They disappear once a real conversation begins.
+        */}
+        {!hasConversation && !isProcessing && (
+          <div className="border-t border-rule pt-4">
+            <p className="label mb-2.5">Try asking</p>
+            <div className="flex flex-wrap gap-2">
+              {starters.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setCommand(q)}
+                  className="chip"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div ref={logEndRef} />
       </div>
-
-      {/* Starters disappear once a real conversation begins. */}
-      {!hasConversation && !isProcessing && (
-        <div className="shrink-0 border-t border-rule px-5 py-4">
-          <p className="label mb-2.5">Try asking</p>
-          <div className="flex flex-wrap gap-2">
-            {starters.map((q) => (
-              <button
-                key={q}
-                type="button"
-                onClick={() => setCommand(q)}
-                className="chip"
-              >
-                {q}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <form onSubmit={handleSubmit} className="shrink-0 border-t border-rule bg-term-950 px-5 py-4">
         <label htmlFor="tutor-input" className="label mb-2 block">

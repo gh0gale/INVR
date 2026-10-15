@@ -2,7 +2,6 @@
  * Single source for the backend origin. Previously this literal was repeated
  * in four call sites, which made the documented VITE_API_BASE_URL dead config.
  */
-import type { Timeframe } from './lib/horizons';
 import { parseSuggestions, type Suggestion } from './lib/symbols';
 
 export const API_BASE: string =
@@ -42,17 +41,3 @@ export const searchSymbols = async (
   parseSuggestions(
     await apiJson<unknown>(`/api/v1/symbols/search?q=${encodeURIComponent(q)}`, token, { signal }),
   );
-
-export const horizonsApi = {
-  forStock: (token: string, ticker: string) =>
-    apiJson<{ ticker: string; timeframe: string | null }>(
-      `/api/v1/horizons/stock/${encodeURIComponent(ticker)}`,
-      token,
-    ),
-  setForStock: (token: string, ticker: string, timeframe: Timeframe) =>
-    apiJson<{ ticker: string; timeframe: string }>(
-      `/api/v1/horizons/stock/${encodeURIComponent(ticker)}`,
-      token,
-      { method: 'PUT', body: JSON.stringify({ timeframe }) },
-    ),
-};

@@ -3,7 +3,7 @@
 docs/verdict_engine_plan.md, Phase 3, decision D1. The verdict word never
 changes here. This decides what the verdict means for this user's money:
 risk per trade, position size and cap, whether a setup is shown, fit notes,
-a horizon note and how many watch items to show.
+and how many watch items to show.
 
 Pure: no I/O. Works on v1 and v2 output alike, because it reads only the
 verdict, the stock-level price levels and Silver metrics. Nothing it returns
@@ -36,7 +36,6 @@ class PersonalPlan(BaseModel):
     setup: Optional[dict] = None
     staged_entry: bool = False
     fit_notes: List[str] = []
-    horizon_note: Optional[str] = None
     what_to_watch: List[str] = []
 
 
@@ -98,11 +97,6 @@ def personalise(verdict: str, silver: SilverMetrics, levels: Optional[dict],
         "fit_notes": _fit_notes(silver, _pick(profile, "goal"), risk, verdict),
         "what_to_watch": what_to_watch[:WATCH_ITEMS_FOR.get(experience, WATCH_ITEMS_FOR[DEFAULT_EXPERIENCE])],
     }
-
-    profile_tf = _pick(profile, "timeframe")
-    if profile_tf and profile_tf != silver.timeframe:
-        plan["horizon_note"] = (f"Your profile horizon is {profile_tf.replace('_', ' ')}; "
-                                f"this is a {silver.timeframe.replace('_', ' ')} read.")
 
     setup = None
     if verdict in SETUP_SHOWN_FOR[risk]:

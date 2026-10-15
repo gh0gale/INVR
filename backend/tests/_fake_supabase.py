@@ -1,7 +1,7 @@
 """In-memory stand-in for the supabase-py query builder, covering only the calls
-the horizons and profile routes make."""
+the profile routes make."""
 
-PRIMARY_KEYS = {"user_profiles": ("id",), "stock_horizons": ("user_id", "ticker")}
+PRIMARY_KEYS = {"user_profiles": ("id",)}
 
 
 class _Result:

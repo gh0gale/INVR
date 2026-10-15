@@ -9,7 +9,7 @@ import {
   toRunTicker,
   type Suggestion,
 } from '../src/lib/symbols.ts';
-import { HORIZONS, horizonLabel, isTimeframe, resolveHorizon } from '../src/lib/horizons.ts';
+import { DEFAULT_HORIZON, HORIZONS, horizonLabel } from '../src/lib/horizons.ts';
 import { MANIFEST } from '../src/pipeline.ts';
 import { shouldAutoOpenTutor, shouldStartTour } from '../src/lib/runFlow.ts';
 
@@ -65,12 +65,8 @@ test('horizons are exactly the engine timeframes in MANIFEST', () => {
   assert.equal(horizonLabel('long_term'), 'Long-term');
 });
 
-test('resolveHorizon: saved for the stock, then the profile, then swing', () => {
-  assert.equal(resolveHorizon('intraday', 'long_term'), 'intraday');
-  assert.equal(resolveHorizon(null, 'long_term'), 'long_term');
-  assert.equal(resolveHorizon('1 month', 'positional'), 'positional'); // stale or invalid value
-  assert.equal(resolveHorizon(undefined, undefined), 'swing');
-  assert.equal(isTimeframe('LONG_TERM'), false);
+test('the default horizon is one the engine runs', () => {
+  assert.ok(DEFAULT_HORIZON in MANIFEST);
 });
 
 test('tutor auto-opens only for the latest successful run', () => {

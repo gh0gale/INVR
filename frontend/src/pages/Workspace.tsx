@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/auth';
 import { supabase } from '../supabase';
-import { apiJson, apiUrl, horizonsApi, searchSymbols } from '../api';
+import { apiJson, apiUrl, searchSymbols } from '../api';
 import { Wordmark } from '../components/SiteChrome';
 import { MarketClock } from '../components/MarketClock';
 import { TutorPanel } from '../components/TutorPanel';
@@ -10,7 +10,7 @@ import { SymbolSearch } from '../components/SymbolSearch';
 import { HorizonSelect } from '../components/Horizons';
 import { Tour } from '../components/Tour';
 import { WORKSPACE_TOUR } from '../lib/tourSteps';
-import { horizonLabel, resolveHorizon, type Timeframe } from '../lib/horizons';
+import { DEFAULT_HORIZON, horizonLabel, type Timeframe } from '../lib/horizons';
 import { matchSuggestion, toRunTicker } from '../lib/symbols';
 import { shouldAutoOpenTutor, shouldStartTour, type RunOutcome } from '../lib/runFlow';
 import { SkeletonBlock, SkeletonLine, SkeletonMetric, SkeletonRow } from '../components/Skeleton';
@@ -138,46 +138,9 @@ export default function Workspace() {
     setLog((prev) => [...prev, { ...entry, time: getTime() }]);
 
   /* ---------------------------------------------------------- horizons */
-  // The engine's four timeframes. The selector follows the stock in focus:
-  // the horizon it was last run on (migration 005), else the profile's.
-  const [horizon, setHorizon] = useState<Timeframe>(() => resolveHorizon(null, profile?.timeframe));
-  // The stock the selector is showing a horizon for, as `SYMBOL.NS`.
-  const [focusTicker, setFocusTicker] = useState<string | null>(null);
-  const focusSeq = useRef(0);
-
-  /** The horizon saved for a stock; the profile's if none or the read fails. */
-  const horizonFor = async (ticker: string): Promise<Timeframe> => {
-    if (!token) return resolveHorizon(null, profile?.timeframe);
-    try {
-      const { timeframe } = await horizonsApi.forStock(token, ticker);
-      return resolveHorizon(timeframe, profile?.timeframe);
-    } catch (err) {
-      console.error('Could not read the saved horizon:', err);
-      return resolveHorizon(null, profile?.timeframe);
-    }
-  };
-
-  /** A stock came into focus: select its saved horizon. Stale answers are dropped. */
-  const focusStock = async (ticker: string) => {
-    setFocusTicker(ticker);
-    const mine = ++focusSeq.current;
-    const h = await horizonFor(ticker);
-    if (mine === focusSeq.current) setHorizon(h);
-  };
-
-  const saveStockHorizon = async (ticker: string, timeframe: Timeframe) => {
-    if (!token) return;
-    try {
-      await horizonsApi.setForStock(token, ticker, timeframe);
-    } catch (err) {
-      appendLog({ role: 'sys', text: `Could not remember the horizon for ${ticker}: ${errorMessage(err, 'save failed')}` });
-    }
-  };
-
-  const changeHorizon = (t: Timeframe) => {
-    setHorizon(t);
-    if (focusTicker) void saveStockHorizon(focusTicker, t);
-  };
+  // The engine's four timeframes. The selector is the only source: whatever it
+  // shows is what a run, a watchlist re-run or a tutor command uses.
+  const [horizon, setHorizon] = useState<Timeframe>(DEFAULT_HORIZON);
 
   /* ------------------------------------------------ tutor auto-open, tour */
   const autoOpenKey = userId ? `invr.tutorAutoOpen.${userId}` : null;
@@ -424,13 +387,7 @@ export default function Workspace() {
     let outcome: RunOutcome = 'failed';
 
     setIsProcessing(true);
-    // The horizon in the selector when this stock is the one in focus,
-    // otherwise the one saved for it (a watchlist re-run, a tutor command).
-    const timeframe = ticker === focusTicker ? horizon : await horizonFor(ticker);
-    if (ticker !== focusTicker) {
-      setFocusTicker(ticker);
-      setHorizon(timeframe);
-    }
+    const timeframe = horizon;
     appendLog({ role: 'sys', text: `Running the ${horizonLabel(timeframe)} check for ${ticker}.` });
 
     try {
@@ -510,7 +467,6 @@ export default function Workspace() {
         setActiveItem(row);
         void fetchLedger();
         outcome = 'success';
-        void saveStockHorizon(ticker, timeframe);
 
         const rowScore = asNum(row.gold_verdict?.confidence_score);
         const score = rowScore != null ? ` Confidence ${(rowScore / 10).toFixed(1)} of 10.` : '';
@@ -734,11 +690,10 @@ export default function Workspace() {
           <SymbolSearch
             token={token}
             busy={isProcessing}
-            onPick={(ticker) => void focusStock(ticker)}
             onRun={(ticker) => void runAnalysis(ticker)}
           />
 
-          <HorizonSelect value={horizon} disabled={isProcessing} onChange={changeHorizon} />
+          <HorizonSelect value={horizon} disabled={isProcessing} onChange={setHorizon} />
 
           <div className="ml-auto flex shrink-0 items-center gap-4">
             <div className="hidden lg:block">
@@ -819,10 +774,7 @@ export default function Workspace() {
                       >
                         <button
                           type="button"
-                          onClick={() => {
-                            setActiveItem(item);
-                            void focusStock(item.ticker);
-                          }}
+                          onClick={() => setActiveItem(item)}
                           aria-pressed={selected}
                           className="min-w-0 flex-1 p-3 text-left"
                         >
@@ -941,10 +893,7 @@ export default function Workspace() {
                       <button
                         key={item.log_id}
                         type="button"
-                        onClick={() => {
-                            setActiveItem(item);
-                            void focusStock(item.ticker);
-                          }}
+                        onClick={() => setActiveItem(item)}
                         aria-pressed={selected}
                         className={`inline-flex min-h-[44px] shrink-0 items-baseline gap-2 whitespace-nowrap rounded-[2px] border px-3 py-2 transition-colors ${
                           selected ? 'border-accent bg-term-850' : 'border-rule-strong hover:border-accent'

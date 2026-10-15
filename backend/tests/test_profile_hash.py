@@ -17,7 +17,6 @@ def make_profile(**overrides) -> UserProfileRequest:
     base = dict(
         experience="intermediate",
         goal="wealth_growth",
-        timeframe="swing",
         risk="moderate",
         portfolio={"Equities": 0.6, "Cash": 0.4},
         capital=100000.0,
@@ -43,7 +42,7 @@ def test_hash_fits_the_database_column():
         {"capital": 9_999_999_999.99},
         {"portfolio": {"A": 0.1, "B": 0.2, "C": 0.3, "D": 0.4}},
         {"goal": "capital_preservation", "risk": "conservative"},
-        {"experience": "advanced", "timeframe": "long_term"},
+        {"experience": "advanced", "risk": "aggressive"},
     ],
 )
 def test_hash_length_is_stable_across_profile_shapes(overrides):
@@ -81,7 +80,7 @@ class TestEmptyPortfolio:
         from app.schemas.profile import UserProfileRequest
 
         p = UserProfileRequest(
-            experience="beginner", goal="wealth_growth", timeframe="swing",
+            experience="beginner", goal="wealth_growth",
             risk="moderate", capital=250000.0, portfolio={},
         )
         assert p.portfolio == {}
@@ -90,7 +89,7 @@ class TestEmptyPortfolio:
         from app.schemas.profile import UserProfileRequest
 
         p = UserProfileRequest(
-            experience="intermediate", goal="wealth_growth", timeframe="swing",
+            experience="intermediate", goal="wealth_growth",
             risk="moderate", capital=250000.0, portfolio={"IT": 0.6, "Banking": 0.4},
         )
         assert sum(p.portfolio.values()) == pytest.approx(1.0)
@@ -103,7 +102,7 @@ class TestEmptyPortfolio:
 
         with pytest.raises(ValidationError):
             UserProfileRequest(
-                experience="intermediate", goal="wealth_growth", timeframe="swing",
+                experience="intermediate", goal="wealth_growth",
                 risk="moderate", capital=250000.0, portfolio={"IT": 0.6},
             )
 
@@ -111,7 +110,7 @@ class TestEmptyPortfolio:
         from app.schemas.profile import UserProfileRequest, UserProfileResponse
 
         req = UserProfileRequest(
-            experience="beginner", goal="wealth_growth", timeframe="swing",
+            experience="beginner", goal="wealth_growth",
             risk="moderate", capital=250000.0, portfolio={},
         )
         assert len(UserProfileResponse.create_with_hash(req, []).profile_version_hash) == 32

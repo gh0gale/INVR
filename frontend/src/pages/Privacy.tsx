@@ -28,7 +28,7 @@ const DATA = [
   },
   {
     what: 'Risk profile',
-    why: 'Experience level, goal, horizon, risk tolerance, allocation weights and capital figure. Used to select which gates run and to size positions.',
+    why: 'Experience level, goal, risk tolerance, allocation weights and capital figure. Used to size positions and to fit explanations to you.',
     where: 'user_profiles',
   },
   {

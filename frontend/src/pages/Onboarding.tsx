@@ -8,7 +8,7 @@ import { errorMessage } from '../types';
 import { useDocumentTitle } from '../hooks';
 
 /**
- * Six questions, in the order the backend profile schema expects them. The
+ * Five questions, in the order the backend profile schema expects them. The
  * labels state what each answer actually changes downstream rather than
  * dressing the step up as a system operation.
  */
@@ -25,13 +25,6 @@ const QUESTIONS = [
     heading: 'What are you investing for?',
     why: 'Frames how each verdict is explained back to you.',
     options: ['Wealth Growth', 'Dividend Income', 'Capital Preservation'],
-    type: 'choice',
-  },
-  {
-    id: 'style',
-    heading: 'Which horizon do you trade on?',
-    why: 'Selects the data the pipeline fetches and the gates it applies.',
-    options: ['Intraday', 'Swing', 'Positional', 'Long-term'],
     type: 'choice',
   },
   {
@@ -68,14 +61,12 @@ export default function Onboarding() {
   const [formData, setFormData] = useState<{
     experience: string;
     goal: string;
-    style: string;
     risk: string;
     portfolio: { id: string; name: string; value: string }[];
     capital: string;
   }>({
     experience: '',
     goal: '',
-    style: '',
     risk: '',
     portfolio: [
       { id: 'init-1', name: 'Equities', value: '' },
@@ -145,13 +136,9 @@ export default function Onboarding() {
           ? 'dividend_income'
           : 'capital_preservation';
 
-    const styleMapped =
-      formData.style === 'Long-term' ? 'long_term' : formData.style.toLowerCase();
-
     const payload = {
       experience: formData.experience.toLowerCase(),
       goal: goalMapped,
-      timeframe: styleMapped,
       risk: formData.risk.toLowerCase(),
       portfolio: finalPortfolio,
       capital: parseFloat(formData.capital),

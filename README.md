@@ -118,7 +118,7 @@ flowchart LR
 ## Key Features
 
 - **Bronze / Silver / Gold pipeline.** Bronze fetches only what the chosen horizon needs, Silver is pure vectorised pandas, and Gold applies a horizon-specific set of 5 to 6 pass/warn/fail gates, resolves a verdict and applies three overrides. A gate whose input was never fetched does not vote.
-- **Four horizons.** Intraday, swing, positional and long-term each fetch different data and apply different gates. The workspace remembers the horizon you last ran each stock on.
+- **Four horizons.** Intraday, swing, positional and long-term each fetch different data and apply different gates. You pick the horizon in the workspace before each run; nothing about it is stored.
 - **Deterministic verdict and confidence.** Confidence is a weighted gate-pass ratio mapped onto 50 to 95. After the model's JSON is parsed, verdict and confidence are overwritten from Gold, and the figures in the narrative are scored against the engine's.
 - **ATR trade setup.** Entry zone, stop and target from Average True Range, with position size limited to 2% risk and clamped to the user's capital. Long-term runs have no setup.
 - **Streaming tutor.** A LangGraph agent with a deterministic scope gate, an embedding router (definition, portfolio, scenario, news, fallback), an optional news tool and per-session memory.
@@ -132,7 +132,7 @@ flowchart LR
 
 ## How a run works
 
-1. **Onboarding.** A new user answers six questions (experience, goal, default horizon, risk, allocation, capital). The backend stores them in `user_profiles` with a `profile_version_hash`.
+1. **Onboarding.** A new user answers five questions (experience, goal, risk, allocation, capital). The backend stores them in `user_profiles` with a `profile_version_hash`.
 2. **Search and horizon.** The user searches for a company or NSE symbol and picks a match. The horizon selector shows the horizon saved for that stock, or the onboarding horizon if none.
 3. **Analyse.** The workspace posts `{ticker, timeframe, user_profile, session_id}` to `POST /api/v1/analytics/process` with the Supabase JWT.
 4. **Bronze.** yfinance price history for the horizon's period and interval, plus fundamentals, the sector index and NSE circuit status where the horizon asks for them.
@@ -198,7 +198,7 @@ INVR/
 │   ├── config/           # gate_thresholds.py (machine-edited by the Engine Room)
 │   ├── migrations/       # 001 to 005, applied by hand
 │   ├── scripts/          # Engine Room and utilities
-│   └── tests/            # 374 unit tests, no network needed
+│   └── tests/            # 363 unit tests, no network needed
 ├── frontend/
 │   ├── vercel.json       # SPA rewrite for the Vercel deploy
 │   ├── src/
@@ -226,8 +226,6 @@ All routes except `/` and `/health` need `Authorization: Bearer <Supabase access
 | `POST /api/v1/profiles/tour` | Mark the workspace tour done | none |
 | `POST /api/v1/analytics/process` | Run the pipeline, write the ledger, return `log_id` | 10/min |
 | `POST /api/v1/tutor/chat/stream` | Tutor answer as Server-Sent Events | 30/min |
-| `GET /api/v1/horizons/stock/{ticker}` | Saved horizon for a stock | 120/min |
-| `PUT /api/v1/horizons/stock/{ticker}` | Save the horizon for a stock | 60/min |
 | `GET /api/v1/symbols/search?q=` | NSE ticker suggestions (24 h cache) | 60/min |
 
 Interactive docs are at `/docs` (`/` redirects there).
@@ -302,13 +300,15 @@ supabase db execute -f backend/migrations/001_ledger_rls.sql
 supabase db execute -f backend/migrations/003_user_scoped_history.sql
 supabase db execute -f backend/migrations/004_watchlists.sql
 supabase db execute -f backend/migrations/005_horizons_and_tour.sql
+supabase db execute -f backend/migrations/006_drop_profile_timeframe.sql
 ```
 
 - **001** revokes client writes on `algorithmic_ledger` and `prediction_interactions`. Without it the browser can delete the record the Engine Room grades against.
 - **002** is optional and only widens `profile_version_hash`.
 - **003** adds `prediction_interactions.user_id` and enables RLS on `chat_sessions` and `user_profiles`. Without it the anon key can read every user's conversations and capital.
 - **004** creates `watchlists`. Without it the star button fails and the list stays empty.
-- **005** adds `user_profiles.tour_completed_at` and the `stock_horizons` table. Without it every stock opens on the onboarding horizon and the tour shows on every visit.
+- **005** adds `user_profiles.tour_completed_at`. Without it the tour shows on every visit. (It also creates `stock_horizons`, which 006 drops.)
+- **006** makes `user_profiles.timeframe` nullable and drops `stock_horizons`. Without it saving a profile fails, because the backend no longer sends a horizon.
 
 Which migrations are applied on the live database cannot be determined from the repository. `docs/deployment_plan.md` and `.claude/memory/INDEX.md` record what was last confirmed.
 
@@ -326,7 +326,7 @@ cd frontend && npm run dev                              # http://localhost:5173
 
 ```bash
 cd backend
-pytest tests/ -q                       # 374 tests
+pytest tests/ -q                       # 363 tests
 pytest tests/test_gold_gates.py -v     # one file
 
 cd ../frontend

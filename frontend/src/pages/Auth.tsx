@@ -103,7 +103,7 @@ export default function Auth() {
               </h1>
               <p className="mt-5 text-base leading-relaxed text-fg-2">
                 An account stores your risk profile and analysis history so the engine can
-                frame results against your stated horizon and capital.
+                frame results against your stated risk and capital.
               </p>
             </div>
 

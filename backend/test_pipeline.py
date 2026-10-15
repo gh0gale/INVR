@@ -177,7 +177,6 @@ def run():
         req = UserProfileRequest(
             experience="advanced",
             goal="dividend_income",
-            timeframe="positional",
             risk="aggressive",
             portfolio={"equities": 0.8, "debt": 0.2},
             capital=500000.0

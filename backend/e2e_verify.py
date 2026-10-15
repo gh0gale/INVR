@@ -82,7 +82,6 @@ section("1. PROFILE  (REG-01 varchar(32) regression)")
 profile_payload = {
     "experience": "intermediate",
     "goal": "wealth_growth",
-    "timeframe": "swing",
     "risk": "moderate",
     "capital": 250000.0,
     "portfolio": {},

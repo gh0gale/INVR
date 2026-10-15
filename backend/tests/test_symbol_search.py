@@ -93,6 +93,12 @@ class TestRoute:
 
 
 class TestRunContract:
+    def test_request_timeframes_are_exactly_the_engine_timeframes(self):
+        from app.pipeline.router import PIPELINE_CONFIG
+
+        allowed = PipelineRequest.model_fields["timeframe"].annotation.__args__
+        assert set(allowed) == set(PIPELINE_CONFIG)
+
     def test_unknown_timeframe_is_rejected_before_the_graph(self):
         with pytest.raises(ValueError):
             PipelineRequest(ticker="TCS.NS", timeframe="1 month")

@@ -37,9 +37,7 @@ export const SymbolSearch: React.FC<{
   busy: boolean;
   /** Called with a validated run ticker (`SYMBOL.NS`). */
   onRun: (ticker: string) => void;
-  /** Called when a listing is chosen, before any run, so the horizon can follow it. */
-  onPick: (ticker: string) => void;
-}> = ({ token, busy, onRun, onPick }) => {
+}> = ({ token, busy, onRun }) => {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<Suggestion[]>([]);
   const [status, setStatus] = useState<Status>('idle');
@@ -91,7 +89,6 @@ export const SymbolSearch: React.FC<{
     setQuery(bareSymbol(s.symbol));
     setOpen(false);
     setInlineError(null);
-    onPick(s.symbol);
   };
 
   const submit = (e: React.FormEvent) => {
@@ -110,7 +107,6 @@ export const SymbolSearch: React.FC<{
       setOpen(true);
       return;
     }
-    if (chosen && chosen !== picked) onPick(ticker);
     setQuery('');
     setPicked(null);
     setItems([]);
