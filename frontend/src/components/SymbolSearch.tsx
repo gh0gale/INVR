@@ -11,7 +11,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { searchSymbols } from '../api';
 import { bareSymbol, matchSuggestion, toRunTicker, type Suggestion } from '../lib/symbols';
-import { errorMessage } from '../types';
 import { IconSearch } from './Icons';
 import { SkeletonLine } from './Skeleton';
 
@@ -41,7 +40,6 @@ export const SymbolSearch: React.FC<{
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<Suggestion[]>([]);
   const [status, setStatus] = useState<Status>('idle');
-  const [fetchError, setFetchError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [picked, setPicked] = useState<Suggestion | null>(null);
@@ -68,12 +66,10 @@ export const SymbolSearch: React.FC<{
         if (mine !== seq.current) return;
         setItems(found);
         setActive(found.length ? 0 : -1);
-        setFetchError(null);
         setStatus('ready');
-      } catch (err) {
+      } catch {
         if (controller.signal.aborted || mine !== seq.current) return;
         setItems([]);
-        setFetchError(errorMessage(err, 'Search failed.'));
         setStatus('error');
       }
     }, DEBOUNCE_MS);
@@ -101,7 +97,7 @@ export const SymbolSearch: React.FC<{
         status === 'loading'
           ? 'Still searching. Pick a listing when the matches appear.'
           : status === 'error'
-            ? 'Search is unavailable, so the ticker cannot be checked. Try again shortly.'
+            ? 'No results yet. Keep typing, then pick a listing.'
             : `No NSE listing matches "${q}". Pick one from the list.`,
       );
       setOpen(true);
@@ -210,10 +206,9 @@ export const SymbolSearch: React.FC<{
           )}
           {status === 'error' && (
             <div role="alert" className="flex flex-col gap-1 p-3.5">
-              <p className="text-sm text-down">Could not search listings.</p>
-              <p className="text-sm text-fg-3">{fetchError}</p>
+              <p className="text-sm text-fg-3">No results yet. Keep typing, or</p>
               <button type="button" onClick={() => setRetry((n) => n + 1)} className="text-action self-start">
-                Try again
+                try again
               </button>
             </div>
           )}
