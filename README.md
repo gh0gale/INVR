@@ -127,6 +127,8 @@ flowchart LR
 - **First-login workspace tour.** Completion is stored on the profile, so another device does not replay it.
 - **Engine Room.** A daily grader scores matured predictions against real highs and lows, a weekly drift analyzer proposes threshold changes from bootstrap intervals, and a human approves any change through a LangGraph interrupt.
 - **Hosted models with failover.** Groq primary, Gemini fallback, and a deterministic narrative if both fail. Ollama is supported for local development.
+- **Verdict engine v2, in shadow.** A graded factor scorer (`services/factors.py`, `scoring_service.py`, weights in `config/factor_weights.py`) runs beside the gate tally on every analysis and is stored as `gold_verdict.shadow_v2` on the ledger row. Same five verdict words, same caps. No user sees it yet; it is collected so it can be measured against v1 before any cutover.
+- **Personal layer (built, not wired).** `services/personalise.py` and `config/personal_rules.py` fit one verdict to a user's risk, capital, goal and experience (risk per trade, position size and cap, fit notes) without changing the verdict word. See Roadmap.
 - **Observability.** OpenTelemetry spans (with LangChain auto-instrumentation) to an OTLP collector such as Arize Phoenix. The trace id is stored on each ledger row.
 - **Terminal interface.** Charcoal surfaces, one amber accent, hairline rules, a live NSE session clock, a ticker tape of real ledger rows, and a scroll-advanced walkthrough of one real pipeline run. No icon, animation or charting library.
 
@@ -150,7 +152,8 @@ flowchart LR
 
 - **Bronze** (`services/bronze_service.py`) follows the manifest in `pipeline/router.py`. Optional fetches run concurrently, so one failing degrades the result instead of failing the request.
 - **Silver** (`services/silver_service.py`) has no I/O and no business logic. Most unit tests target it.
-- **Gold** (`services/gold_service.py`) reads every threshold from `config/gate_thresholds.py`.
+- **Gold** (`services/gold_service.py`) reads every threshold from `config/gate_thresholds.py`. It is the live verdict (`RULESET_VERSION` v1.2.1).
+- **Shadow v2** (`quant_engine_node`) scores the same Silver state with graded factors, fixed per-horizon weights and a coverage floor, then applies the same hard caps. A v2 exception is logged and omitted; it never fails the v1 response.
 - **Synthesis** is cached for six hours, keyed on the prompt, model identity, profile, verdict and Silver state.
 
 ### 2. The tutor (`backend/app/pipeline/tutor_graph.py`)
@@ -187,16 +190,16 @@ INVR/
 │   ├── main.py           # FastAPI app: telemetry, CORS, limiter, routers, /health
 │   ├── Dockerfile        # python:3.12-slim, non-root, uvicorn on $PORT
 │   ├── app/
-│   │   ├── api/          # deps.py (JWT) and routes: analytics, profile, tutor, horizons, symbols
+│   │   ├── api/          # deps.py (JWT) and routes: analytics, profile, tutor, symbols
 │   │   ├── guardrails/   # Input injection patterns, tutor scope gate
 │   │   ├── integrations/ # yfinance and nsepython wrappers
 │   │   ├── pipeline/     # router, tutor_graph, memory_graph, engine_room_graph
 │   │   ├── schemas/      # Pydantic contracts
-│   │   ├── services/     # bronze, silver, gold, grounding, ledger, memory, profile, guardrail, cache
+│   │   ├── services/     # bronze, silver, gold, factors, scoring (v2), personalise, grounding, ledger, memory, profile, guardrail, cache
 │   │   ├── tools/        # News headlines for the tutor
 │   │   ├── config.py, llm.py, embeddings.py, prompts.py, rate_limit.py, telemetry.py, orchestrator.py
-│   ├── config/           # gate_thresholds.py (machine-edited by the Engine Room)
-│   ├── migrations/       # 001 to 005, applied by hand
+│   ├── config/           # gate_thresholds.py (machine-edited by the Engine Room), factor_weights.py, personal_rules.py
+│   ├── migrations/       # 001 to 006, applied by hand
 │   ├── scripts/          # Engine Room and utilities
 │   └── tests/            # 364 unit tests, no network needed
 ├── frontend/
@@ -335,7 +338,7 @@ npm run lint
 npm run build                          # tsc -b && vite build
 ```
 
-The backend suite needs no Ollama, Supabase, API key or network. It covers the Gold verdict logic, trade-setup arithmetic, prompt rendering, the shared grading rule, ledger versioning, drift statistics, per-user history isolation, unit normalisation of fundamentals, provider failover (including mid-stream), per-account rate limits, the tutor scope gate, narrative grounding, the horizon and tour endpoints, and symbol search. `.github/workflows/tests.yml` runs it on pushes to `main` and pull requests touching `backend/`, alongside a lockfile drift check and a Docker build.
+The backend suite needs no Ollama, Supabase, API key or network. It covers the Gold verdict logic, trade-setup arithmetic, prompt rendering, the shared grading rule, ledger versioning, drift statistics, per-user history isolation, unit normalisation of fundamentals, provider failover (including mid-stream), per-account rate limits, the tutor scope gate, narrative grounding, the profile and tour endpoints, symbol search, the v2 factor scorer and the personal layer. `.github/workflows/tests.yml` runs it on pushes to `main` and pull requests touching `backend/`, alongside a lockfile drift check and a Docker build.
 
 Live checks (not pytest), run from `backend/` with a server, a model provider and the migrations in place:
 
@@ -382,13 +385,14 @@ python -m scripts.trigger_engine_room    # interactive approval; rewrites gate_t
 python -m scripts.simulate_live_history  # bootstrap the ledger with backdated swing predictions
 python -m scripts.analyze_and_chat       # run pipeline and tutor from the terminal
 python -m scripts.build_centroids        # after editing the router's category descriptions
+python -m scripts.replay_scores          # offline: rank IC of v1 and shadow v2 vs NIFTY 50 excess return (live yfinance, ~7 min)
 ```
 
 `PIPELINE_VERSION` is `RULESET_VERSION` plus a short SHA-256 fingerprint of `GATE_THRESHOLDS`, so editing a threshold creates a new version automatically and predictions made under different rules are never graded as one cohort. Bump `RULESET_VERSION` by hand only for logic a threshold cannot express, such as a new gate or a changed override.
 
 ## Current implementation status
 
-**Implemented:** everything described above, including the four-horizon pipeline, the tutor, per-user history, watchlist, per-stock horizons, NSE symbol search, the workspace tour, the Engine Room, hosted-model failover and the Render and Vercel deployment files.
+**Implemented:** everything described above, including the four-horizon pipeline, the tutor, per-user history, watchlist, the workspace horizon selector, NSE symbol search, the shadow v2 scorer, the replay harness, the workspace tour, the Engine Room, hosted-model failover and the Render and Vercel deployment files.
 
 **Limitations:**
 
@@ -399,11 +403,23 @@ python -m scripts.build_centroids        # after editing the router's category d
 - **Coverage** is NSE equities only. BSE symbols are not supported.
 - **Session clock** knows regular NSE hours (09:15 to 15:30 IST, weekdays) but not exchange holidays.
 - **Rate limits** use per-worker memory storage; multi-instance deployments need `RATE_LIMIT_STORAGE_URI` pointed at a shared store. There is no per-user daily model quota yet.
-- **Ruleset.** The Gold layer reduces about 28 Silver metrics to 5 or 6 pass/fail gates per horizon (open finding OBS-01).
-
-**Planned, not implemented:** Zerodha Kite Connect, Monte Carlo and inflation-adjusted projections, a shared cache, a background inference queue, an MCP server, and a switchable trace exporter for production.
+- **Ruleset.** The live Gold layer reduces about 28 Silver metrics to 5 or 6 pass/fail gates per horizon (open finding OBS-01). Shadow v2 addresses this, but the first replay (47 large caps, 5 years) showed v2 is not convincingly better than v1: every rank IC against NIFTY 50 excess return is under 0.05, and v1 shows no signal on the 15-day swing horizon. The replay has survivorship bias and no costs. Nothing is cut over on that evidence.
+- **Shared position size (ISO-02).** The ATR trade setup's position size comes from the requesting user's capital but is stored in the owner-less, deduplicated ledger row, so a second user running the same ticker, horizon and day sees the first user's size. Fix is planned in the personal layer.
 
 Phase and backlog status is tracked in `docs/system_evaluation_prompt.md`; open findings in `docs/audit_report.md`.
+
+## Roadmap
+
+Planned, in order. Detail and decision records are in `docs/verdict_engine_plan.md`.
+
+1. **Keep shadowing v2.** Collect `shadow_v2` on live ledger rows until enough have matured, then add `scripts/evaluate_scores.py` (read-only rank IC of v1 and v2 against NIFTY 50 excess return). Make `analyze_drift.py` filter to the current `PIPELINE_VERSION`.
+2. **Personal layer.** Wire `personalise()` into `POST /analytics/process`: per-user risk per trade, position size and cap, fit notes and watch-list depth, shown in a "For you" panel under a verdict card that is identical for everyone. Needs a new migration (`personal_plan` on `prediction_interactions`), moves position size out of the shared ledger row (fixes ISO-02), and passes the plan to the narrator and the tutor.
+3. **Cutover to v2.** Only if the replay interval for v2 minus v1 is above zero on a horizon and live shadow IC does not contradict it, or the owner chooses it on interpretability grounds. Then the factor breakdown replaces the gate list and `RULESET_VERSION` becomes v2.0.0.
+4. **Production readiness.** A switchable trace exporter (no OTLP collector exists in production), a per-user daily model quota, and a shared rate-limit store for multi-instance deploys.
+5. **Deferred until a trigger is met:** watchlist ranking (v2 IC interval above zero), a daily NSE screener (ranking proves useful and passes a SEBI review), regime-specific weights, per-user stop and target levels, named strategy lenses (momentum, quality, value), a `long_term` replay (needs point-in-time fundamentals).
+6. **Ideas, no commitment:** Zerodha Kite Connect, Monte Carlo and inflation-adjusted projections, a shared cache, a background inference queue, an MCP server.
+
+Rejected on purpose: LLM tool-calling to pick signals, per-regime or per-risk playbooks, different verdict words per user, and tuning v2 weights on the replay data.
 
 ## License
 
